@@ -29,6 +29,13 @@ constexpr int I2C_SCL = 3;
 constexpr char TIMEZONE[] = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 constexpr uint64_t MIN_EPOCH = 1704067200ULL;  // 2024-01-01 UTC.
 constexpr uint64_t MAX_EPOCH = 4102444799ULL;  // 2099-12-31 UTC.
+constexpr uint32_t STA_ATTEMPT_MS = 15000;
+constexpr uint32_t STA_RETRY_MIN_MS = 30000;
+constexpr uint32_t STA_RETRY_MAX_MS = 120000;
+#ifndef LED_WIFI_TX_POWER
+// SuperMini association failed at the driver's default power; lower-power board calibration.
+#define LED_WIFI_TX_POWER WIFI_POWER_8_5dBm
+#endif
 
 WebServer server(80);
 Preferences preferences;
@@ -61,6 +68,13 @@ bool wasConnected = false;
 bool wifiPending = false;
 uint32_t wifiRequested = 0;
 uint32_t lastWifiAttempt = 0;
+bool staAttemptActive = false;
+bool staConfigDisconnecting = false;
+uint32_t staAttemptStarted = 0;
+uint32_t staRetryDelay = 0;
+uint32_t staNextRetryDelay = STA_RETRY_MIN_MS;
+std::atomic<int> lastStaReason{-1};
+std::atomic<int> lastStaRssi{0};
 uint64_t uptimeMs = 0;
 uint32_t previousMillis = 0;
 
@@ -221,12 +235,43 @@ void loadSettings() {
   if (preferences.isKey("ap_pass")) apPassword = preferences.getString("ap_pass");
 }
 
+void applyWifiPower() {
+  const bool applied = WiFi.setTxPower(LED_WIFI_TX_POWER);
+  Serial.printf("[NET] TX power requested=%.2f dBm actual=%.2f dBm (%s).\n",
+                static_cast<int>(LED_WIFI_TX_POWER) / 4.0, static_cast<int>(WiFi.getTxPower()) / 4.0,
+                applied ? "set" : "FAILED");
+}
+
+void startStaAttempt(uint32_t now) {
+  staAttemptActive = true;
+  wasConnected = false;
+  staAttemptStarted = now;
+  WiFi.begin(wifi.ssid, wifi.password);  // Async; caller waits until the old connection is down.
+  applyWifiPower();
+  Serial.printf("[NET] STA attempt, timeout=%lu s; AP channel=%u clients=%u.\n",
+                static_cast<unsigned long>(STA_ATTEMPT_MS / 1000), WiFi.channel(), WiFi.softAPgetStationNum());
+}
+
+void scheduleStaRetry(uint32_t now) {
+  WiFi.disconnectAsync(false, false);  // Leave AP and stored credentials untouched; stop station scanning.
+  staAttemptActive = false;
+  lastWifiAttempt = now;
+  staRetryDelay = staNextRetryDelay;
+  staNextRetryDelay = staNextRetryDelay < STA_RETRY_MAX_MS / 2 ? staNextRetryDelay * 2 : STA_RETRY_MAX_MS;
+  Serial.printf("[NET] STA paused; retry in %lu s; AP channel=%u clients=%u.\n",
+                static_cast<unsigned long>(staRetryDelay / 1000), WiFi.channel(), WiFi.softAPgetStationNum());
+}
+
 void startNetwork() {
   WiFi.persistent(false);
   WiFi.setHostname("led-control");
+  WiFi.setAutoReconnect(false);  // Native reconnect events have no backoff and can starve the shared AP radio.
   WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) {
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-      Serial.printf("[NET] STA disconnected, reason=%u.\n", static_cast<unsigned>(info.wifi_sta_disconnected.reason));
+      lastStaReason.store(info.wifi_sta_disconnected.reason);
+      lastStaRssi.store(info.wifi_sta_disconnected.rssi);
+      Serial.printf("[NET] STA disconnected, reason=%u rssi=%d dBm.\n",
+                    static_cast<unsigned>(info.wifi_sta_disconnected.reason), info.wifi_sta_disconnected.rssi);
     }
   });
   WiFi.mode(WIFI_AP_STA);  // Enable RF entropy before creating the first AP password.
@@ -245,28 +290,39 @@ void startNetwork() {
   Serial.printf("[NET] AP SSID: %s\n", apSsid.c_str());
   Serial.printf("[NET] AP password: %s\n", apPassword.c_str());
   Serial.printf("[NET] AP URL: http://%s/ (%s)\n", WiFi.softAPIP().toString().c_str(), apActive ? "ready" : "FAILED");
-  WiFi.setAutoReconnect(true);
-  if (wifi.ssid[0]) {
-    WiFi.begin(wifi.ssid, wifi.password);
-    lastWifiAttempt = millis();
-  }
+  applyWifiPower();
+  if (wifi.ssid[0]) startStaAttempt(millis());
   if (MDNS.begin("led-control")) MDNS.addService("http", "tcp", 80);
 }
 
 void updateNetwork(uint32_t now) {
-  if (wifiPending && aqua::due(now, wifiRequested, 300)) {
-    wifiPending = false;
-    WiFi.disconnect(false, false, 50);
-    WiFi.begin(wifi.ssid, wifi.password);
-    lastWifiAttempt = now;
-  }
   const bool connected = WiFi.status() == WL_CONNECTED;
-  if (connected && !wasConnected) {
-    Serial.printf("[NET] STA URL: http://%s/ (http://led-control.local/)\n", WiFi.localIP().toString().c_str());
+  if (wifiPending && aqua::due(now, wifiRequested, 300)) {
+    if (!staConfigDisconnecting) {
+      WiFi.disconnectAsync(false, false);
+      staAttemptActive = false;
+      staConfigDisconnecting = true;
+      lastWifiAttempt = now;
+    } else if (!connected && aqua::due(now, lastWifiAttempt, 250)) {
+      wifiPending = false;
+      staConfigDisconnecting = false;
+      staNextRetryDelay = STA_RETRY_MIN_MS;
+      startStaAttempt(now);
+    }
   }
-  if (!connected && wifi.ssid[0] && !wifiPending && aqua::due(now, lastWifiAttempt, 30000)) {
-    WiFi.reconnect();
-    lastWifiAttempt = now;
+  if (connected) {
+    staAttemptActive = false;
+    staNextRetryDelay = STA_RETRY_MIN_MS;
+    if (!wasConnected) {
+      Serial.printf("[NET] STA URL: http://%s/ (http://led-control.local/) channel=%u rssi=%d dBm.\n",
+                    WiFi.localIP().toString().c_str(), WiFi.channel(), WiFi.RSSI());
+    }
+  } else if (!wifiPending && wifi.ssid[0]) {
+    if (wasConnected || (staAttemptActive && aqua::due(now, staAttemptStarted, STA_ATTEMPT_MS))) {
+      scheduleStaRetry(now);
+    } else if (!staAttemptActive && aqua::due(now, lastWifiAttempt, staRetryDelay)) {
+      startStaAttempt(now);
+    }
   }
   wasConnected = connected;
 }
@@ -390,6 +446,13 @@ void sendState() {
   state += ",\"apSsid\":"; state += jsonString(apSsid);
   state += ",\"apIp\":"; state += jsonString(WiFi.softAPIP().toString());
   state += ",\"rssi\":"; state += connected ? WiFi.RSSI() : 0;
+  state += ",\"channel\":"; state += WiFi.channel();
+  state += ",\"staAttempting\":"; state += staAttemptActive ? "true" : "false";
+  const uint32_t retryElapsed = static_cast<uint32_t>(millis() - lastWifiAttempt);
+  state += ",\"retryInSec\":"; state += (!connected && !staAttemptActive && !wifiPending && retryElapsed < staRetryDelay)
+      ? (staRetryDelay - retryElapsed + 999) / 1000 : 0;
+  state += ",\"lastDisconnectReason\":"; state += lastStaReason.load();
+  state += ",\"lastDisconnectRssi\":"; state += lastStaRssi.load();
   state += "},\"warmPin\":0,\"coolPin\":4,\"storageOk\":"; state += storageOk ? "true" : "false";
   state += ",\"savePending\":"; state += settingsDirty ? "true" : "false";
   state += ",\"uptime\":"; state += String(static_cast<unsigned long long>(uptimeMs / 1000));

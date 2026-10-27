@@ -3,7 +3,8 @@
 
 Compiles the actual schedule.h with a native C++17 compiler and sanitizers.
 Checks independent curves, interpolation, midnight wrap and atomic dual rejection,
-mode/clock behavior, PWM endpoints and Budapest DST. No board or packages needed.
+mode/clock behavior, PWM endpoints, Budapest DST and the actual bounded network retry path.
+No board or packages needed.
 Electrical behavior, HTTP, NVS and Wi-Fi require the device integration checks.
 """
 from pathlib import Path
@@ -156,17 +157,101 @@ int main() {
 }
 '''
 
+NETWORK_STUBS = r'''
+#include <cassert>
+#include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include "schedule.h"
+namespace network_test {
+enum wifi_power_t { WIFI_POWER_8_5dBm=34 };
+constexpr int WL_DISCONNECTED=0,WL_CONNECTED=1;
+bool wasConnected=false,wifiPending=false,staAttemptActive=false,staConfigDisconnecting=false;
+uint32_t wifiRequested=0,lastWifiAttempt=0,staAttemptStarted=0,staRetryDelay=0;
+struct Credentials { const char* ssid="test-network"; const char* password="test-only-password"; } wifi;
+struct Address { std::string toString() { return "192.0.2.2"; } };
+struct Network {
+  int state=WL_DISCONNECTED;
+  unsigned starts=0,stops=0,powerWrites=0;
+  wifi_power_t power=WIFI_POWER_8_5dBm;
+  int status() { return state; }
+  void begin(const char* ssid,const char* password) {
+    assert(state!=WL_CONNECTED && std::strcmp(ssid,wifi.ssid)==0 && std::strcmp(password,wifi.password)==0); ++starts;
+  }
+  void disconnectAsync(bool off,bool erase) { assert(!off && !erase); ++stops; state=WL_DISCONNECTED; }
+  bool setTxPower(wifi_power_t value) { power=value; ++powerWrites; return true; }
+  wifi_power_t getTxPower() { return power; }
+  unsigned channel() { return 1; }
+  unsigned softAPgetStationNum() { return 1; }
+  int RSSI() { return -42; }
+  Address localIP() { return {}; }
+} WiFi;
+struct Output {
+  std::string text;
+  template<typename... Args> void printf(const char* format,Args... args) {
+    char buffer[512]; std::snprintf(buffer,sizeof(buffer),format,args...); text+=buffer;
+  }
+} Serial;
+'''
+NETWORK_CHECKS = r'''
+void check() {
+  startStaAttempt(0);
+  assert(WiFi.starts==1 && staAttemptActive && WiFi.power==WIFI_POWER_8_5dBm);
+  updateNetwork(STA_ATTEMPT_MS-1); assert(WiFi.starts==1 && WiFi.stops==0);
+  updateNetwork(STA_ATTEMPT_MS); assert(!staAttemptActive && WiFi.stops==1 && staRetryDelay==30000);
+  updateNetwork(44999); assert(WiFi.starts==1);
+  updateNetwork(45000); assert(WiFi.starts==2 && staAttemptActive);
+  updateNetwork(60000); assert(staRetryDelay==60000 && WiFi.stops==2);
+  updateNetwork(119999); assert(WiFi.starts==2);
+  updateNetwork(120000); assert(WiFi.starts==3);
+  updateNetwork(135000); assert(staRetryDelay==120000);
+  updateNetwork(255000); assert(WiFi.starts==4);
+  updateNetwork(270000); assert(staRetryDelay==120000); // Bounded exponential retry ceiling.
+  updateNetwork(390000); assert(WiFi.starts==5);
+  WiFi.state=WL_CONNECTED; updateNetwork(390001);
+  assert(!staAttemptActive && staNextRetryDelay==STA_RETRY_MIN_MS);
+  updateNetwork(500000); assert(WiFi.starts==5 && WiFi.stops==4); // No scans while connected.
+  WiFi.state=WL_DISCONNECTED; updateNetwork(500001);
+  assert(staRetryDelay==30000 && !staAttemptActive);
+  updateNetwork(530001); assert(WiFi.starts==6);
+  WiFi.state=WL_CONNECTED; updateNetwork(530002);
+  wifiPending=true; wifiRequested=530010;
+  updateNetwork(530310); assert(staConfigDisconnecting && WiFi.starts==6);
+  updateNetwork(530560); // No intervening fast loop: stale old-connected flag must not cancel the new attempt.
+  assert(!wifiPending && !staConfigDisconnecting && staAttemptActive && WiFi.starts==7);
+  assert(WiFi.powerWrites==WiFi.starts && Serial.text.find(wifi.password)==std::string::npos);
+  wasConnected=false; wifiPending=false; staAttemptActive=false; staConfigDisconnecting=false;
+  lastWifiAttempt=0; staRetryDelay=0; staNextRetryDelay=STA_RETRY_MIN_MS; WiFi=Network{};
+  startStaAttempt(UINT32_MAX-10000);
+  updateNetwork(4998); assert(WiFi.stops==0);
+  updateNetwork(4999); assert(WiFi.stops==1 && staRetryDelay==30000);
+  updateNetwork(34998); assert(WiFi.starts==1);
+  updateNetwork(34999); assert(WiFi.starts==2); // Rollover preserves both deadline and backoff.
+  std::puts("PASS network: actual main callpath, bounded STA attempts/backoff, success reset, async credential switch, rollover, TX calibration, no password logging");
+}
+} // namespace network_test
+'''
+
 cases = {
     "SPRING_BEFORE": datetime(2026, 3, 29, 0, 59, tzinfo=timezone.utc),
     "SPRING_AFTER": datetime(2026, 3, 29, 1, 0, tzinfo=timezone.utc),
     "FALL_BEFORE": datetime(2026, 10, 25, 0, 59, tzinfo=timezone.utc),
     "FALL_AFTER": datetime(2026, 10, 25, 1, 0, tzinfo=timezone.utc),
 }
+network_constants = "\n".join(line for line in source.splitlines() if line.startswith("constexpr uint32_t STA_"))
+power_start = source.index("#ifndef LED_WIFI_TX_POWER")
+power_macro = source[power_start:source.index("#endif", power_start) + len("#endif")]
+network_helpers = source[source.index("void applyWifiPower()"):source.index("\nvoid startNetwork()")]
+network_update = source[source.index("void updateNetwork(uint32_t now)"):source.index("\nbool startSensor()")]
+network_code = (NETWORK_STUBS + network_constants + "\n" + power_macro +
+                "\nuint32_t staNextRetryDelay=STA_RETRY_MIN_MS;\n" + network_helpers + network_update + NETWORK_CHECKS)
+assert "WiFi.setAutoReconnect(false)" in source
 with tempfile.TemporaryDirectory(prefix="aqualight-check-") as directory:
     temp = Path(directory)
     cpp = temp / "check.cpp"
     cpp.write_text(f'#define TEST_TIMEZONE "{tz}"\n' +
-                   "".join(f"#define {name} {int(moment.timestamp())}LL\n" for name, moment in cases.items()) + CHECKS)
+                   "".join(f"#define {name} {int(moment.timestamp())}LL\n" for name, moment in cases.items()) + network_code + CHECKS.replace("int main() {", "int main() {\n  network_test::check();", 1))
     executable = temp / "check"
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-I", str(ROOT / "src"),

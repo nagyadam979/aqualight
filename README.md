@@ -37,6 +37,8 @@ A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s na
 
 Mindkét csatorna saját 2–16 egyedi időpontból álló görbét tárol; a meleg pontok szerkesztése nem változtatja meg a hideg csatorna időpontjait vagy fényerejét. A csatornák a saját pontjaik között folyamatosan, lineárisan változnak, az utolsó ponttól az elsőig éjfélen át is. A helyi óra tavaszi előreállásakor az átugrott óra kimarad; ősszel az ismétlődő helyi óra megismétli a görbe adott szakaszát.
 
+A saját AP elérhetőségéért az állomáscsatlakozásnak 15 másodperces határideje van. Sikertelen próbálkozás után 30, 60, majd legfeljebb 120 másodperc szünet következik, az AP kikapcsolása nélkül; sikeres csatlakozás visszaállítja a rövid várakozást. A natív, késleltetés nélküli automatikus újracsatlakozás ki van kapcsolva. A hálózati napló jelszavak nélkül jelzi a hibakódot, az utolsó jelerősséget, az AP csatornáját és a következő próbálkozást. Az ESP32-C3 SuperMini rádiójának alapkalibrációja 8,5 dBm; más laphoz a `LED_WIFI_TX_POWER` fordítási makróval változtatható, például a natív `WIFI_POWER_19_5dBm` értékre. A tényleges beállított teljesítmény a naplóban visszaolvasható.
+
 A mód, a program és a kézi fényerő megmarad újraindításkor. A kézi csúszkák beállítása az utolsó módosítás után 2 másodperccel kerül flashbe; a program és a módváltás azonnal mentődik. Áramszünet után automata módban a kimenetek érvényes új időszinkronig kikapcsolva maradnak. A rendszer nem állít vissza egy régi, elmentett dátumot. Kézi módban óra nélkül is világít a beállított értékkel.
 
 Az AHT20 hibája a lámpavezérlést nem állítja le. A hibás mérés helyett a felület érvénytelen adatot jelez, és az ESP újrapróbálja a szenzor inicializálását. PWM-hiba esetén mindkét kimenet kikapcsolt állapotba kerül.
