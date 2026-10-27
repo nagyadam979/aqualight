@@ -164,6 +164,7 @@ String encodeSettings(const aqua::Settings &value) {
 bool saveSettings(const aqua::Settings &value) {
   const String encoded = encodeSettings(value);
   storageOk = preferencesOpen && preferences.putString("settings", encoded) == encoded.length();
+  if (storageOk) lastSaveFailed = false;
   if (!storageOk) Serial.println("[NVS] Settings save failed.");
   return storageOk;
 }
