@@ -44,7 +44,7 @@ struct State {
   unsigned progress = 0;
   uint32_t lastCheck = 0;
 } state;
-std::atomic<bool> queued{false}, running{false}, ready{false};
+std::atomic<bool> queued{false}, running{false}, ready{false}, bootSelected{false};
 std::atomic<uint32_t> nextCheck{FIRST_CHECK_MS};
 bool configured = false, pendingValidation = false, rollbackFailed = false;
 uint32_t startedMs = 0, healthySince = 0;
@@ -270,8 +270,9 @@ bool checkAndInstall() {
   // Only the main loop knows that pending settings have reached NVS.
   ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
   if (esp_ota_set_boot_partition(target) != ESP_OK) { setState("error", "Boot partition could not be selected"); return false; }
-  ESP.restart();
-  return true;
+  bootSelected.store(true);
+  // Retain the mutex until the main loop rechecks freshly saved settings and reboots.
+  for (;;) ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
 void worker(void *) {
@@ -307,7 +308,8 @@ void begin() {
   if (!configured) setState("error", "Update worker could not be started");
 }
 
-bool tryLock() { return flashMutex && xSemaphoreTake(flashMutex, 0) == pdTRUE; }
+// Preserve the previous slot until the newly booted image has passed its health gate.
+bool tryLock() { return !pendingValidation && flashMutex && xSemaphoreTake(flashMutex, 0) == pdTRUE; }
 void unlock() { if (flashMutex) xSemaphoreGive(flashMutex); }
 bool busy() { return flashMutex && uxSemaphoreGetCount(flashMutex) == 0; }
 
@@ -338,6 +340,11 @@ void poll(bool applicationHealthy, bool canReboot) {
         setState("error", "Startup failed; no bootable rollback image");
       }
     }
+    return;
+  }
+  if (canReboot && bootSelected.load()) {
+    setState("rebooting", "", 100);
+    ESP.restart();
     return;
   }
   if (canReboot && ready.exchange(false)) {

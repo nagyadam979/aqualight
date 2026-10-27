@@ -22,6 +22,17 @@ import release_firmware as release
 ROOT = Path(__file__).resolve().parent
 
 
+def firmware_function(signature):
+    text = (ROOT / "src/cloud_update.cpp").read_text()
+    start = text.index(signature)
+    opening = text.index("{", start)
+    depth, end = 1, opening + 1
+    while depth:
+        depth += (text[end] == "{") - (text[end] == "}")
+        end += 1
+    return text[start:end]
+
+
 def fixture_image():
     header = bytearray(24)
     header[0:2] = bytes([0xE9, 1])
@@ -85,15 +96,7 @@ int main() {
             subprocess.run([str(binary)], check=True)
 
     def test_actual_poll_health_deadline_and_reboot_gate(self):
-        text = (ROOT / "src/cloud_update.cpp").read_text()
-        start = text.index("void poll(bool applicationHealthy, bool canReboot)")
-        opening = text.index("{", start)
-        depth = 1
-        end = opening + 1
-        while depth:
-            depth += (text[end] == "{") - (text[end] == "}")
-            end += 1
-        implementation = text[start:end]
+        implementation = firmware_function("void poll(bool applicationHealthy, bool canReboot)")
         source = r'''
 #include <atomic>
 #include <cassert>
@@ -103,10 +106,12 @@ constexpr int ESP_OK=0;
 constexpr uint32_t MIN_VALIDATION_MS=10000,HEALTH_STABLE_MS=3000,VALIDATION_DEADLINE_MS=60000;
 bool pendingValidation=true,rollbackFailed=false,configured=false;
 uint32_t startedMs=0,healthySince=1,nowMs=10001;
-std::atomic<bool> ready{false},queued{false},running{false};
+std::atomic<bool> ready{false},queued{false},running{false},bootSelected{false};
 std::atomic<uint32_t> nextCheck{0};
 void *workerTask=nullptr;
 int accepted=0,rolledBack=0,acceptResult=-1,notified=0;
+int rebooted=0;
+struct Esp {void restart(){++rebooted;}} ESP;
 const char *lastState="";
 uint32_t millis(){return nowMs;}
 void setState(const char *state,const char * ="",unsigned=0){lastState=state;}
@@ -129,10 +134,38 @@ int main(){
   pendingValidation=false; ready=true;
   poll(true,false); assert(notified==0 && ready);
   poll(true,true); assert(notified==1 && !ready && !strcmp(lastState,"rebooting"));
+  // An HTTP edit after the first ready notification must postpone the actual reboot.
+  bootSelected=true;
+  poll(true,false); assert(rebooted==0);
+  poll(true,true); assert(rebooted==1);
 }
 '''
         with tempfile.TemporaryDirectory(prefix="led-ota-health-") as folder:
             binary = Path(folder) / "health"
+            subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=address,undefined", "-x", "c++", "-", "-o", str(binary)],
+                           input=source, text=True, check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_local_ota_cannot_erase_the_rollback_slot_during_validation(self):
+        source = r'''
+#include <cassert>
+#include <cstdint>
+bool pendingValidation=true;
+void *flashMutex=reinterpret_cast<void *>(1);
+int takes=0;
+constexpr int pdTRUE=1;
+int xSemaphoreTake(void *,uint32_t){++takes;return pdTRUE;}
+'''
+        source += firmware_function("bool tryLock()") + r'''
+int main(){
+  assert(!tryLock() && takes==0);
+  pendingValidation=false; assert(tryLock() && takes==1);
+  flashMutex=nullptr; assert(!tryLock() && takes==1);
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="led-ota-lock-") as folder:
+            binary = Path(folder) / "lock"
             subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=address,undefined", "-x", "c++", "-", "-o", str(binary)],
                            input=source, text=True, check=True)
