@@ -199,6 +199,35 @@ function call(name, argument) { context.testEvent = argument; return run(name + 
   const posts = calls.filter(call => call.options.method === 'POST');
   assert.equal(posts.at(-2).route, '/api/manual'); assert.equal(posts.at(-1).route, '/api/mode');
 
+  const savedProgramBeforeModeSwitch = JSON.stringify(state.schedule);
+  const programButton = modeButtons.find(button => button.dataset.mode === 'auto');
+  const warmSlider = elements.get('warmSlider');
+  state.mode = 'manual'; await run('refresh()');
+  warmSlider.value = '99'; elements.get('coolSlider').value = '0';
+  warmSlider.listeners.input(); // Start a real slider callback path, then cancel its pending write.
+  await programButton.listeners.click();
+  warmSlider.listeners.change(); // A delayed gesture commit must not recreate a manual command.
+  await run('sendManual()'); await run('refresh()');
+  assert.equal(state.mode, 'auto');
+  assert.equal(run('manualQueued'), null);
+  assert.equal(JSON.stringify(state.schedule), savedProgramBeforeModeSwitch);
+
+  warmSlider.value = '98'; warmSlider.listeners.input();
+  await run('sendManual()');
+  assert.equal(state.mode, 'manual'); // A new intentional adjustment after auto still controls the lamp.
+  heldPath = '/api/manual'; warmSlider.value = '88'; warmSlider.listeners.input();
+  const pendingManual = run('sendManual()'); await flush();
+  const automatic = programButton.listeners.click();
+  release(); await pendingManual; await automatic; heldPath = null;
+  await run('refresh()'); warmSlider.listeners.change();
+  await run('sendManual()'); await run('refresh()');
+  assert.equal(state.mode, 'auto');
+  assert.equal(run('manualQueued'), null);
+  const autoPosts = calls.filter(call => call.options.method === 'POST');
+  assert.equal(autoPosts.at(-2).route, '/api/manual');
+  assert.equal(new URLSearchParams(autoPosts.at(-1).options.body).get('mode'), 'auto');
+  assert.equal(JSON.stringify(state.schedule), savedProgramBeforeModeSwitch);
+
   heldPath = '/api/program'; const save = run('saveProgram()'); await flush();
   run("draft.warm[0].level='29';markDirty()"); release(); await save; heldPath = null;
   assert.equal(run('draft.warm[0].level'), '29'); assert.equal(run('dirty'), true);
@@ -210,5 +239,5 @@ function call(name, argument) { context.testEvent = argument; return run(name + 
   assert.equal(elements.get('manualStatus').textContent, 'Beállítások mentése…');
   state.storageOk = false; await run('refresh()');
   assert.equal(elements.get('storageNotice').hidden, false);
-  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; manual/OFF and save/edit races; sensor/clock/storage status');
+  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; manual/OFF/auto late-change and save/edit races; sensor/clock/storage status');
 })().catch(error => { console.error(error); process.exitCode = 1; });

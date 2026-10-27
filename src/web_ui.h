@@ -570,7 +570,7 @@ for (const channel of ['warm', 'cool']) {
   const slider = $(channel + 'Slider');
   slider.addEventListener('pointerdown', () => manualEditing = true);
   slider.addEventListener('input', queueManual);
-  slider.addEventListener('change', () => { manualEditing = false; queueManual(); });
+  slider.addEventListener('change', () => { manualEditing = false; });
   slider.addEventListener('blur', () => manualEditing = false);
 }
 window.addEventListener('pointerup', () => manualEditing = false);
