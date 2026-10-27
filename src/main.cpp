@@ -143,18 +143,21 @@ void applyOutput() {
   actual = desired;
 }
 
+void appendCurve(String &text, const aqua::Curve &curve) {
+  for (uint8_t i = 0; i < curve.count; ++i) {
+    if (i) text += ';';
+    text += curve.points[i].minute;
+    text += ','; text += curve.points[i].level;
+  }
+}
+
 String encodeSettings(const aqua::Settings &value) {
-  String text = "1,";
+  String text = "2,";
   text += static_cast<unsigned>(value.mode);
   text += ','; text += value.manualWarm;
   text += ','; text += value.manualCool;
-  text += '|';
-  for (uint8_t i = 0; i < value.count; ++i) {
-    if (i) text += ';';
-    text += value.points[i].minute;
-    text += ','; text += value.points[i].warm;
-    text += ','; text += value.points[i].cool;
-  }
+  text += '|'; appendCurve(text, value.warm);
+  text += '|'; appendCurve(text, value.cool);
   return text;
 }
 
@@ -324,6 +327,16 @@ bool integerArg(const char *name, uint64_t maximum, uint64_t &value) {
   return text.length() == strlen(text.c_str()) && aqua::integer(text.c_str(), maximum, value);
 }
 
+void appendCurveJson(String &text, const aqua::Curve &curve) {
+  text += '[';
+  for (uint8_t i = 0; i < curve.count; ++i) {
+    if (i) text += ',';
+    text += "{\"minute\":"; text += curve.points[i].minute;
+    text += ",\"level\":"; text += curve.points[i].level; text += '}';
+  }
+  text += ']';
+}
+
 void sendState() {
   time_t epoch;
   tm local = {};
@@ -347,15 +360,10 @@ void sendState() {
   state += ",\"localTime\":"; state += jsonString(localTime);
   state += ",\"minuteOfDay\":"; state += clockValid ? local.tm_hour * 60 + local.tm_min : 0;
   state += ",\"timeSource\":"; state += jsonString(!clockValid ? "none" : source == TimeSource::Ntp ? "ntp" : "browser");
-  state += ",\"schedule\":[";
-  for (uint8_t i = 0; i < settings.count; ++i) {
-    if (i) state += ',';
-    state += "{\"minute\":"; state += settings.points[i].minute;
-    state += ",\"warm\":"; state += settings.points[i].warm;
-    state += ",\"cool\":"; state += settings.points[i].cool; state += '}';
-  }
+  state += ",\"schedule\":{\"warm\":"; appendCurveJson(state, settings.warm);
+  state += ",\"cool\":"; appendCurveJson(state, settings.cool);
   const bool connected = WiFi.status() == WL_CONNECTED;
-  state += "],\"network\":{\"connected\":"; state += connected ? "true" : "false";
+  state += "},\"network\":{\"connected\":"; state += connected ? "true" : "false";
   state += ",\"ssid\":"; state += jsonString(wifi.ssid);
   state += ",\"ip\":"; state += jsonString(connected ? WiFi.localIP().toString() : String(""));
   state += ",\"apActive\":"; state += apActive ? "true" : "false";
@@ -409,12 +417,14 @@ void configureRoutes() {
     sendJson(200, "{\"ok\":true}");
   });
   server.on("/api/program", HTTP_POST, [] {
-    if (!writableRequest(1)) return;
-    const String points = server.arg("points");
+    if (!writableRequest(2)) return;
+    const String warm = server.arg("warmPoints");
+    const String cool = server.arg("coolPoints");
     aqua::Settings candidate = settings;
-    if (points.length() > 512 || points.length() != strlen(points.c_str()) ||
-        !aqua::parseProgram(points.c_str(), candidate)) {
-      errorResponse(400, "2–16 különböző, időrendbe rendezett pont kell; a fényerők 0–100 között legyenek."); return;
+    if (warm.length() > 512 || cool.length() > 512 ||
+        warm.length() != strlen(warm.c_str()) || cool.length() != strlen(cool.c_str()) ||
+        !aqua::parseProgram(warm.c_str(), cool.c_str(), candidate)) {
+      errorResponse(400, "Mindkét csatornához 2–16 különböző, időrendbe rendezett pont kell; a fényerő 0–100 között legyen."); return;
     }
     if (!saveAndApply(candidate)) { errorResponse(503, "A program mentése sikertelen."); return; }
     sendJson(200, "{\"ok\":true}");
