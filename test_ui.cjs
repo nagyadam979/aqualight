@@ -9,7 +9,7 @@ const assert = require('assert/strict');
 const header = fs.readFileSync(path.join(__dirname, 'src/web_ui.h'), 'utf8');
 const script = header.match(/<script>([\s\S]*?)<\/script>/)[1];
 const elements = new Map(), all = [], calls = [], timers = new Map();
-let activeElement = null, nextTimer = 1, heldPath = null, release = null, holdNextGet = false, releaseGet = null;
+let activeElement = null, nextTimer = 1, heldPath = null, release = null, holdNextGet = false, releaseGet = null, updateRequestError = '';
 
 class Element {
   constructor(tag = 'div') {
@@ -93,6 +93,10 @@ const context = vm.createContext({
     if (options.method === 'POST') {
       assert.equal(options.headers['X-Aqua-Request'], '1');
       const data = Object.fromEntries(new URLSearchParams(options.body));
+      if (route === '/api/update/check') {
+        assert.deepEqual(Object.keys(data), []);
+        if (updateRequestError) return {ok: false, status: 503, json: async () => ({ok: false, error: updateRequestError})};
+      }
       if (route === '/api/manual') {
         if (state.mode !== 'manual') return {ok: false, status: 409, json: async () => ({ok: false, error: 'Előbb kapcsold be a kézi módot.'})};
         state.manualWarm = state.warm = Number(data.warm); state.manualCool = state.cool = Number(data.cool);
@@ -282,5 +286,72 @@ function call(name, argument) { context.testEvent = argument; return run(name + 
   assert.equal(elements.get('manualStatus').textContent, 'Beállítások mentése…');
   state.storageOk = false; await run('refresh()');
   assert.equal(elements.get('storageNotice').hidden, false);
-  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; explicit manual ON/OFF; guarded slider writes; stale polls and save/edit races; sensor/clock/storage status');
+  const draftBeforeUpdate = run('JSON.stringify(draft)'), modeBeforeUpdate = state.mode;
+  const manualBeforeUpdate = [state.manualWarm, state.manualCool];
+  const checkButton = elements.get('checkUpdate');
+  assert.equal(checkButton.disabled, true); // Update data is optional, never assumed configured.
+  assert.equal(elements.get('firmwareVersion').textContent, '—');
+  state.maintenance = {version: '1.1.0', localOtaReady: true, telnetReady: true, localOtaBusy: false};
+  state.update = {configured: true, state: 'waiting', version: '1.1.0', release_id: '', progress: 0, last_check: 0, error: ''};
+  await run('refresh()');
+  assert.equal(checkButton.disabled, false);
+  assert.equal(elements.get('firmwareVersion').textContent, '1.1.0');
+  assert.equal(elements.get('availableVersion').hidden, true);
+  assert.equal(elements.get('localOtaStatus').textContent, 'Elérhető');
+  assert.equal(elements.get('telnetStatus').textContent, 'Elérhető');
+  heldPath = '/api/update/check';
+  const check = checkButton.listeners.click(); await flush();
+  assert.equal(checkButton.disabled, true); assert.equal(run('updateCheckPending'), true);
+  const checksBeforeDoubleClick = calls.filter(call => call.route === '/api/update/check').length;
+  await checkButton.listeners.click();
+  assert.equal(calls.filter(call => call.route === '/api/update/check').length, checksBeforeDoubleClick);
+  release(); await check; heldPath = null;
+  assert.equal(run('updateCheckPending'), false);
+  const updatePost = calls.find(call => call.route === '/api/update/check');
+  assert.equal(updatePost.options.body, '');
+  assert.match(elements.get('toast').textContent, /sorba állította/); // HTTP202 is queued, not installed.
+  assert.equal(elements.get('updateStatus').textContent, 'Várakozás a következő ellenőrzésre.');
+  for (const busyState of ['checking', 'downloading', 'ready', 'rebooting', 'pending_validation']) {
+    state.update.state = busyState; await run('refresh()');
+    assert.equal(checkButton.disabled, true);
+  }
+  state.update.state = 'downloading'; state.update.progress = 27.5; await run('refresh()');
+  assert.equal(elements.get('updateProgressRow').hidden, false);
+  assert.equal(elements.get('updateProgress').value, 28);
+  assert.equal(elements.get('updatePercent').textContent, '28%');
+  state.update.state = 'error'; state.update.error = '<img src=x onerror=alert(1)>';
+  state.update.available_version = '<b>1.2.0</b>'; state.update.version = '<script>bad()</script>';
+  state.update.last_check = Date.UTC(2026, 9, 27, 12, 0) / 1000; await run('refresh()');
+  assert.equal(checkButton.disabled, false);
+  assert.equal(elements.get('updateDetail').textContent, state.update.error);
+  assert.equal(elements.get('updateDetail').innerHTML, undefined);
+  assert.equal(elements.get('firmwareVersion').textContent, state.update.version);
+  assert.equal(elements.get('firmwareVersion').innerHTML, undefined);
+  assert.equal(elements.get('availableVersion').textContent, state.update.available_version);
+  assert.match(elements.get('lastUpdateCheck').textContent, /13:00/);
+  state.update.state = '<svg onload=bad()>'; await run('refresh()');
+  assert.equal(elements.get('updateStatus').textContent, 'A frissítési állapot nem ismert.');
+  state.update.state = 'constructor'; await run('refresh()');
+  assert.equal(elements.get('updateStatus').textContent, 'A frissítési állapot nem ismert.');
+  state.update.state = 'waiting'; state.update.error = ''; state.update.configured = false; await run('refresh()');
+  assert.equal(checkButton.disabled, true);
+  state.update.configured = true; state.maintenance.localOtaBusy = true; await run('refresh()');
+  assert.equal(checkButton.disabled, true);
+  state.maintenance.localOtaBusy = false; await run('refresh()');
+  updateRequestError = 'Az eszköz most nem tud csatlakozni.'; await checkButton.listeners.click();
+  assert.equal(run('updateCheckPending'), false); assert.equal(checkButton.disabled, false);
+  assert.equal(elements.get('updateStatus').textContent, 'Az ellenőrzés indítása nem sikerült.');
+  assert.equal(elements.get('updateDetail').textContent, updateRequestError);
+  updateRequestError = '';
+  state.update.state = 'rebooting'; await run('refresh()'); run('connection(false)');
+  assert.equal(checkButton.disabled, true);
+  state.update.state = 'healthy'; state.update.version = '1.2.0'; await run('refresh()');
+  assert.equal(elements.get('firmwareVersion').textContent, '1.2.0');
+  delete state.update; await run('refresh()');
+  assert.equal(checkButton.disabled, true);
+  assert.equal(elements.get('firmwareVersion').textContent, '1.1.0'); // Local-maintenance fallback.
+  assert.equal(run('JSON.stringify(draft)'), draftBeforeUpdate);
+  assert.equal(state.mode, modeBeforeUpdate);
+  assert.deepEqual([state.manualWarm, state.manualCool], manualBeforeUpdate);
+  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; explicit manual ON/OFF; guarded slider writes; stale polls and save/edit races; sensor/clock/storage status; OTA optional/pending/error/progress/reconnect state');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -21,6 +21,7 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
 .modebar{grid-template-columns:1.45fr 1fr}.graphlegend{gap:9px;margin-top:16px}.curvebtn{--curve:var(--warm);display:flex;align-items:center;gap:8px;text-align:left;flex:1;min-width:0;min-height:54px;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#0e171d;color:var(--muted);font-size:12px;font-weight:550;line-height:1.3}.curvebtn.cool{--curve:var(--cool)}.curvebtn small{display:block;font-size:10px;font-weight:400;margin-top:2px;opacity:.75}.curvebtn[aria-pressed="true"]{border-color:var(--curve);background:color-mix(in srgb,var(--curve) 8%,#101a21);color:var(--text)}.curvebtn .swatch{width:9px;height:9px;border-radius:50%;flex:none}.curvecount{font-size:10px;font-weight:400;margin-left:auto;color:var(--muted);white-space:nowrap}.chart,.chart svg{height:300px;touch-action:none;user-select:none;-webkit-user-select:none}.point-handle{cursor:grab;outline:none}.point-handle:active{cursor:grabbing}.point-handle:focus-visible .point-knob{stroke:#fff;stroke-width:3}.point-handle .point-hit{pointer-events:all}.pointinspector{--curve:var(--warm);display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:15px;padding:12px 13px;background:#0d171d;border:1px solid var(--line);border-radius:13px}.inspectlabel{display:block;color:var(--curve);font-size:10px}.pointvalue{font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}.graphhint{color:var(--muted);font-size:11px;line-height:1.6;margin:12px 1px 0}.manualbody{padding:0 17px 18px}.manualbody .sectionhead{margin:0 0 15px;align-items:center}.manualbody .modebtn{font-size:11px;max-width:190px}.manualbody .subtle{font-size:10px;text-align:right}.precision{--curve:var(--warm)}.precision .tablehead,.precision .pointrow{grid-template-columns:105px minmax(0,1fr) 44px;gap:12px}.precision .tablehead span:nth-child(2){color:var(--curve)}.precision .btn{margin-top:5px}.precision .settingsection p{margin-bottom:17px}.precision .pointrow.selected input{border-color:var(--curve)}
 @media(min-width:700px){.chart,.chart svg{height:330px}.curvebtn{padding:10px 14px}.manualbody{padding:0 22px 23px}.precision .tablehead,.precision .pointrow{grid-template-columns:150px minmax(0,1fr) 44px}}@media(max-width:360px){.curvebtn{padding:8px;font-size:11px;gap:6px}.curvecount{font-size:9px}.precision .tablehead,.precision .pointrow{grid-template-columns:100px minmax(0,1fr) 44px;gap:8px}}
 .manualactions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}.manualactions .modebtn{max-width:none;min-height:48px;font-size:11px;line-height:1.4}.manualstatus{min-height:18px;font-size:11px;color:var(--muted);margin:0 0 15px}
+.updateprogress{display:flex;align-items:center;gap:12px;margin:0 0 14px;font-size:11px;color:var(--cool)}.updateprogress progress{width:100%;height:9px;accent-color:var(--cool)}.updatedetail{overflow-wrap:anywhere}.updatedetail.error{color:var(--danger)}.localstatus{display:block;margin-top:3px;color:var(--muted);font-size:10px}.networkinfo code{font-size:11px}
 </style>
 </head>
 <body>
@@ -66,6 +67,10 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
     <section class="settingsection"><h3>A vezérlő órája</h3><p id="timeInfo">Automatikus internetes időszinkron Wi-Fi-kapcsolaton. Magyar téli–nyári időszámítás.</p><button type="button" class="btn" id="syncClock">Beállítás erről az eszközről</button><p>Teljes áramtalanítás után a program az idő újrabeállításáig várakozik. Kézi módban ilyenkor is szabályozhatsz.</p></section>
     <section class="settingsection"><h3>Wi-Fi-kapcsolat</h3><dl class="networkinfo"><dt>Otthoni hálózat</dt><dd id="wifiStatus">Betöltés…</dd><dt>Webcím</dt><dd id="wifiAddress">—</dd><dt>Saját hálózat</dt><dd id="apName">—</dd><dt>Közvetlen cím</dt><dd id="apAddress">192.168.4.1</dd></dl><form id="wifiForm" class="wifiform"><label class="field" for="wifiSsid">Hálózat neve<input id="wifiSsid" name="ssid" maxlength="32" autocomplete="off" required placeholder="Wi-Fi neve"></label><label class="field" for="wifiPassword">Hálózati jelszó<input id="wifiPassword" name="password" type="password" maxlength="63" autocomplete="new-password" placeholder="Wi-Fi-jelszó"></label><button type="submit" class="btn" id="saveWifi">Mentés és csatlakozás</button></form><p>A vezérlő saját Wi-Fi-hálózata akkor is elérhető marad, ha az otthoni csatlakozás nem sikerül. A saját hálózat jelszavát nem módosítja ez az űrlap.</p></section>
   </div></details>
+  <details id="diagnostics" class="settings"><summary>Frissítés és diagnosztika<svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="m5 8 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="settingsbody">
+    <section class="settingsection"><h3>Firmware-frissítés</h3><dl class="networkinfo"><dt>Futó verzió</dt><dd id="firmwareVersion">—</dd><dt id="availableVersionLabel" hidden>Elérhető verzió</dt><dd id="availableVersion" hidden>—</dd><dt>Állapot</dt><dd id="updateStatus" aria-live="polite">Frissítési adatok betöltése…</dd><dt>Utolsó ellenőrzés</dt><dd id="lastUpdateCheck">—</dd></dl><div id="updateProgressRow" class="updateprogress" hidden><progress id="updateProgress" max="100" value="0" aria-label="Firmware letöltésének állása"></progress><span id="updatePercent">0%</span></div><p id="updateDetail" class="updatedetail" aria-live="polite" hidden></p><button type="button" class="btn" id="checkUpdate" disabled>Frissítés keresése</button></section>
+    <section class="settingsection"><h3>Helyi elérés</h3><dl class="networkinfo"><dt>LAN OTA</dt><dd><code>led-control.local:3232</code><span id="localOtaStatus" class="localstatus">Állapot nem közölt</span></dd><dt>Telnet</dt><dd><code>led-control.local:23</code><span id="telnetStatus" class="localstatus">Állapot nem közölt</span></dd></dl><p>Mindkét helyi szolgáltatás jelszava a vezérlő saját Wi-Fi-hálózatának jelszava.</p></section>
+  </div></details>
   <footer class="footer">AquaLight · meleg és hideg fehér fény, a te ritmusodban</footer>
 </main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -85,6 +90,15 @@ let activeCurve = 'warm', selected = {warm: null, cool: null}, geometry = null;
 let drag = null, tapCandidate = null, lastTap = null, suppressDoubleUntil = 0;
 let writeChain = Promise.resolve(), manualTimer, manualQueued = null, manualSending = false;
 let manualEditing = false, manualGuardUntil = 0, modePending = 0, modeTarget = null, controlRevision = 0;
+let updateCheckPending = false;
+const updateBusyStates = new Set(['checking', 'downloading', 'ready', 'rebooting', 'pending_validation']);
+const updateLabels = {
+  waiting: 'Várakozás a következő ellenőrzésre.', checking: 'Frissítés keresése…',
+  up_to_date: 'A legfrissebb kiadás fut.', downloading: 'Frissítés letöltése…',
+  ready: 'Frissítés előkészítve; újraindításra vár.', rebooting: 'A vezérlő újraindul…',
+  error: 'A frissítés nem sikerült.', pending_validation: 'Új firmware ellenőrzése…',
+  healthy: 'A firmware működését a vezérlő ellenőrizte.'
+};
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, Math.round(Number(value) || 0)));
 const hhmm = minute => String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0');
@@ -158,8 +172,74 @@ function updateControls() {
   $('syncClock').disabled = !online;
   $('quickClock').disabled = !online;
   $('saveWifi').disabled = !online;
+  $('checkUpdate').disabled = !canCheckUpdate();
   $('removeSelected').disabled = !selectedPoint() || draft[activeCurve].length <= 2;
   if (latest) text('modeBadge', modePending ? 'Módváltás…' : modeNames[latest.mode] || 'Ismeretlen mód');
+}
+
+function canCheckUpdate() {
+  const update = latest && latest.update;
+  return online && !updateCheckPending && update && update.configured === true &&
+    !updateBusyStates.has(update.state) && !(latest.maintenance && latest.maintenance.localOtaBusy);
+}
+function renderUpdate(state) {
+  const update = state.update && typeof state.update === 'object' ? state.update : {};
+  const maintenance = state.maintenance && typeof state.maintenance === 'object' ? state.maintenance : {};
+  const version = typeof update.version === 'string' && update.version ? update.version : maintenance.version;
+  text('firmwareVersion', typeof version === 'string' && version ? version : '—');
+  const available = typeof update.available_version === 'string' ? update.available_version : '';
+  $('availableVersionLabel').hidden = !available;
+  $('availableVersion').hidden = !available;
+  text('availableVersion', available || '—');
+  const status = !state.update ? 'Az eszköz nem közölt frissítési állapotot.' : update.configured !== true ?
+    'A felhős frissítés nem érhető el.' : Object.prototype.hasOwnProperty.call(updateLabels, update.state) ? updateLabels[update.state] : 'A frissítési állapot nem ismert.';
+  text('updateStatus', updateCheckPending ? 'Ellenőrzés indítása…' : status);
+  let lastCheck = update.last_check === 0 ? 'Még nem történt ellenőrzés' : '—';
+  if (finite(update.last_check) && update.last_check > 0) {
+    const date = new Date(update.last_check * 1000);
+    if (!Number.isNaN(date.getTime())) lastCheck = new Intl.DateTimeFormat('hu-HU', {
+      timeZone: 'Europe/Budapest', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+    }).format(date);
+  }
+  text('lastUpdateCheck', lastCheck);
+  const showProgress = finite(update.progress) && ['downloading', 'ready', 'rebooting'].includes(update.state);
+  $('updateProgressRow').hidden = !showProgress;
+  $('updateProgress').value = clamp(update.progress);
+  text('updatePercent', clamp(update.progress) + '%');
+  let detail = typeof update.error === 'string' ? update.error : '';
+  if (!detail && update.state === 'ready') detail = 'A beállítások mentése után a vezérlő újraindul.';
+  if (!detail && update.state === 'rebooting') detail = 'Az oldal újrapróbálja a kapcsolatot. A mentetlen fényprogram itt megmarad.';
+  $('updateDetail').hidden = !detail;
+  $('updateDetail').classList.toggle('error', update.state === 'error');
+  text('updateDetail', detail);
+  text('localOtaStatus', maintenance.localOtaBusy ? 'Helyi frissítés folyamatban' :
+    typeof maintenance.localOtaReady === 'boolean' ? (maintenance.localOtaReady ? 'Elérhető' : 'Nem elérhető') : 'Állapot nem közölt');
+  text('telnetStatus', typeof maintenance.telnetReady === 'boolean' ? (maintenance.telnetReady ? 'Elérhető' : 'Nem elérhető') : 'Állapot nem közölt');
+}
+async function checkForUpdate() {
+  if (!canCheckUpdate()) return;
+  updateCheckPending = true;
+  let accepted = false;
+  text('checkUpdate', 'Indítás…');
+  text('updateStatus', 'Ellenőrzés indítása…');
+  updateControls();
+  try {
+    await mutate('/api/update/check', {});
+    accepted = true;
+    notify('A vezérlő sorba állította a frissítés ellenőrzését.');
+    await refresh(true);
+  } catch (error) {
+    notify(error.message, true);
+    text('updateStatus', 'Az ellenőrzés indítása nem sikerült.');
+    text('updateDetail', error.message);
+    $('updateDetail').hidden = false;
+    $('updateDetail').classList.add('error');
+  } finally {
+    updateCheckPending = false;
+    text('checkUpdate', 'Frissítés keresése');
+    if (accepted && latest) renderUpdate(latest);
+    updateControls();
+  }
 }
 
 function setSlider(channel, value) {
@@ -228,6 +308,7 @@ function render(state) {
   text('apName', network.apActive ? (network.apSsid || 'Elérhető') : 'Nem aktív');
   text('apAddress', network.apIp || '192.168.4.1');
   text('timeInfo', !state.clockValid ? 'Az óra még nincs beállítva. Internetes kapcsolat vagy az alábbi gomb segítségével szinkronizálhatod.' : state.timeSource === 'ntp' ? 'Az idő interneten szinkronizálva. Magyar téli–nyári időszámítás.' : 'Az idő erről az eszközről beállítva. Magyar téli–nyári időszámítás.');
+  renderUpdate(state);
   drawGraph();
   updateInspector();
   updateControls();
@@ -640,6 +721,7 @@ $('preset').addEventListener('click', () => {
 $('settingsShortcut').addEventListener('click', () => { $('settings').open = true; $('settings').scrollIntoView({behavior: 'smooth', block: 'start'}); });
 $('syncClock').addEventListener('click', () => syncClock($('syncClock')));
 $('quickClock').addEventListener('click', () => syncClock($('quickClock')));
+$('checkUpdate').addEventListener('click', checkForUpdate);
 $('wifiForm').addEventListener('submit', async event => {
   event.preventDefault();
   const ssid = $('wifiSsid').value, password = $('wifiPassword').value, bytes = new TextEncoder();
