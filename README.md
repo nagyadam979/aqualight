@@ -18,6 +18,7 @@ pio run -e aqualight
 pio run -e aqualight -t upload
 pio device monitor
 python3 test_controller.py
+node test_ui.cjs
 ```
 
 A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s napló 115200 baudon érhető el. A natív teszt C++17-fordítót és annak AddressSanitizer/UBSan támogatását használja; nem igényel külön tesztcsomagot.
@@ -53,3 +54,5 @@ A `GET /api/state` az aktuális állapotot adja vissza JSON-ként, jelszavak né
 A sikeres válasz `{"ok":true}`. Hiba esetén a válasz HTTP-hibakódot és `{"ok":false,"error":"…"}` objektumot tartalmaz. A program mentése atomikus: ha bármelyik csatorna görbéje érvénytelen, egyik aktív görbe sem változik meg. A Wi-Fi-mentés sikere a csatlakozási kísérlet indítását jelzi; a tényleges kapcsolat az állapotból derül ki. A kikapcsolás tárolóhiba esetén is végrehajtódik, bár a mentés hibát jelezhet.
 
 A hostteszt a két független görbét, az atomikus kettős validálást, a parsereket, módokat, PWM-számítást, időzítést és az időzóna váltásait ellenőrzi. A valódi PWM-jelet, fényerőt, szenzort, HTTP-kiszolgálást, Wi-Fi-t és flashbe mentést hardveren kell ellenőrizni.
+
+A `node test_ui.cjs` a tényleges beágyazott JavaScriptet futtatja egyszerű DOM- és hálózati modellel. A független görbéket, húzást, dupla koppintást, pontkorlátokat, fókuszt és a mentés/módváltás versenyhelyzeteit ellenőrzi; a valódi böngészős érintéskezelést és megjelenést nem bizonyítja.
