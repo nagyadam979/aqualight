@@ -20,6 +20,7 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
 
 .modebar{grid-template-columns:1.45fr 1fr}.graphlegend{gap:9px;margin-top:16px}.curvebtn{--curve:var(--warm);display:flex;align-items:center;gap:8px;text-align:left;flex:1;min-width:0;min-height:54px;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:#0e171d;color:var(--muted);font-size:12px;font-weight:550;line-height:1.3}.curvebtn.cool{--curve:var(--cool)}.curvebtn small{display:block;font-size:10px;font-weight:400;margin-top:2px;opacity:.75}.curvebtn[aria-pressed="true"]{border-color:var(--curve);background:color-mix(in srgb,var(--curve) 8%,#101a21);color:var(--text)}.curvebtn .swatch{width:9px;height:9px;border-radius:50%;flex:none}.curvecount{font-size:10px;font-weight:400;margin-left:auto;color:var(--muted);white-space:nowrap}.chart,.chart svg{height:300px;touch-action:none;user-select:none;-webkit-user-select:none}.point-handle{cursor:grab;outline:none}.point-handle:active{cursor:grabbing}.point-handle:focus-visible .point-knob{stroke:#fff;stroke-width:3}.point-handle .point-hit{pointer-events:all}.pointinspector{--curve:var(--warm);display:flex;align-items:center;justify-content:space-between;gap:15px;margin-top:15px;padding:12px 13px;background:#0d171d;border:1px solid var(--line);border-radius:13px}.inspectlabel{display:block;color:var(--curve);font-size:10px}.pointvalue{font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}.graphhint{color:var(--muted);font-size:11px;line-height:1.6;margin:12px 1px 0}.manualbody{padding:0 17px 18px}.manualbody .sectionhead{margin:0 0 15px;align-items:center}.manualbody .modebtn{font-size:11px;max-width:190px}.manualbody .subtle{font-size:10px;text-align:right}.precision{--curve:var(--warm)}.precision .tablehead,.precision .pointrow{grid-template-columns:105px minmax(0,1fr) 44px;gap:12px}.precision .tablehead span:nth-child(2){color:var(--curve)}.precision .btn{margin-top:5px}.precision .settingsection p{margin-bottom:17px}.precision .pointrow.selected input{border-color:var(--curve)}
 @media(min-width:700px){.chart,.chart svg{height:330px}.curvebtn{padding:10px 14px}.manualbody{padding:0 22px 23px}.precision .tablehead,.precision .pointrow{grid-template-columns:150px minmax(0,1fr) 44px}}@media(max-width:360px){.curvebtn{padding:8px;font-size:11px;gap:6px}.curvecount{font-size:9px}.precision .tablehead,.precision .pointrow{grid-template-columns:100px minmax(0,1fr) 44px;gap:8px}}
+.manualactions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}.manualactions .modebtn{max-width:none;min-height:48px;font-size:11px;line-height:1.4}.manualstatus{min-height:18px;font-size:11px;color:var(--muted);margin:0 0 15px}
 </style>
 </head>
 <body>
@@ -52,7 +53,7 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
     <div class="programactions"><button type="button" class="btn" id="preset">Mintaprogram</button><button type="button" class="btn primary" id="saveProgram" disabled>Program mentése</button></div>
   </section>
   <details id="manualPanel" class="settings manualpanel"><summary>Kézi vezérlés<svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="m5 8 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="manualbody">
-  <div class="sectionhead"><button type="button" class="btn modebtn" data-mode="manual" aria-pressed="false">Kézi mód bekapcsolása</button><span id="manualStatus" class="subtle" aria-live="polite">Állítással kézi módra váltasz</span></div>
+  <div class="manualactions"><button type="button" id="manualEnable" class="btn modebtn" data-mode="manual" aria-pressed="false">Kézi mód bekapcsolása</button><button type="button" id="manualExit" class="btn modebtn" data-mode="auto" aria-pressed="false">Kézi mód kikapcsolása → Automata</button></div><p id="manualStatus" class="manualstatus" aria-live="polite">Előbb kapcsold be a kézi módot.</p>
   <section class="channels" aria-label="Kézi fényerő-szabályozás">
     <div class="channel"><div class="channeltop"><div class="channelsymbol"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5" stroke-linecap="round"/></svg><div><div class="channelname">Meleg fehér</div><div class="channelmeta">2700 K · lágy, arany fény</div></div></div><output class="percent" for="warmSlider"><span id="warmPercent">0</span><small>%</small></output></div><div class="sliderrow"><button class="stepbtn" data-channel="warm" data-step="-1" aria-label="Meleg fényerő csökkentése">−</button><label class="sr-only" for="warmSlider">Meleg fehér fényereje százalékban</label><input id="warmSlider" class="slider" type="range" min="0" max="100" step="1" value="0"><button class="stepbtn" data-channel="warm" data-step="1" aria-label="Meleg fényerő növelése">+</button></div></div>
     <div class="channel cool"><div class="channeltop"><div class="channelsymbol"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M8.5 4 12 7.5 15.5 4M8.5 20 12 16.5 15.5 20M3.5 11l5-1.3L7.2 5M20.5 13l-5 1.3 1.3 4.7M7.2 19l1.3-4.7-5-1.3M16.8 5l-1.3 4.7 5 1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><div><div class="channelname">Hideg fehér</div><div class="channelmeta">6500 K · tiszta nappali fény</div></div></div><output class="percent" for="coolSlider"><span id="coolPercent">0</span><small>%</small></output></div><div class="sliderrow"><button class="stepbtn" data-channel="cool" data-step="-1" aria-label="Hideg fényerő csökkentése">−</button><label class="sr-only" for="coolSlider">Hideg fehér fényereje százalékban</label><input id="coolSlider" class="slider" type="range" min="0" max="100" step="1" value="0"><button class="stepbtn" data-channel="cool" data-step="1" aria-label="Hideg fényerő növelése">+</button></div></div>
@@ -79,11 +80,11 @@ const modeNames = {off: 'Kikapcsolva', manual: 'Kézi vezérlés', auto: 'Automa
 const presetCurve = [{minute: 480, level: 0}, {minute: 540, level: 50}, {minute: 1020, level: 50}, {minute: 1080, level: 0}];
 const formatter = new Intl.NumberFormat('hu-HU', {maximumFractionDigits: 1, minimumFractionDigits: 1});
 let latest = null, draft = {warm: [], cool: []}, dirty = false, draftRevision = 0, savedSignature = '';
-let online = false, pollBusy = false, toastTimer, saving = false, pointCounter = 0;
+let online = false, refreshPromise = null, toastTimer, saving = false, pointCounter = 0;
 let activeCurve = 'warm', selected = {warm: null, cool: null}, geometry = null;
 let drag = null, tapCandidate = null, lastTap = null, suppressDoubleUntil = 0;
 let writeChain = Promise.resolve(), manualTimer, manualQueued = null, manualSending = false;
-let manualEditing = false, manualGuardUntil = 0, modePending = 0;
+let manualEditing = false, manualGuardUntil = 0, modePending = 0, modeTarget = null, controlRevision = 0;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, Math.round(Number(value) || 0)));
 const hhmm = minute => String(Math.floor(minute / 60)).padStart(2, '0') + ':' + String(minute % 60).padStart(2, '0');
@@ -118,10 +119,13 @@ async function request(path, data) {
   } finally { clearTimeout(timer); }
 }
 
-function mutate(path, data) {
-  const task = writeChain.catch(() => {}).then(() => request(path, data));
+function mutate(path, data, allowed = null) {
+  const task = writeChain.catch(() => {}).then(() => !allowed || allowed() ? request(path, data) : null);
   writeChain = task.catch(() => {});
   return task;
+}
+function canControlManually() {
+  return online && latest && latest.mode === 'manual' && latest.pwmOk && modePending === 0;
 }
 
 function connection(isOnline) {
@@ -140,11 +144,13 @@ function connection(isOnline) {
 
 function updateControls() {
   document.querySelectorAll('.modebtn').forEach(button => {
-    button.disabled = !online;
+    button.disabled = !online || (modePending > 0 && button.dataset.mode !== 'off');
+    if (button.id === 'manualEnable' && latest && latest.mode === 'manual') button.disabled = true;
+    if (button.id === 'manualExit' && (!latest || latest.mode !== 'manual')) button.disabled = true;
     button.classList.toggle('pending', modePending > 0);
   });
   document.querySelectorAll('.stepbtn,.slider').forEach(element => {
-    element.disabled = !online || !!(latest && !latest.pwmOk);
+    element.disabled = !canControlManually();
   });
   $('addPoint').disabled = !latest || draft[activeCurve].length >= 16;
   $('preset').disabled = !latest;
@@ -153,6 +159,7 @@ function updateControls() {
   $('quickClock').disabled = !online;
   $('saveWifi').disabled = !online;
   $('removeSelected').disabled = !selectedPoint() || draft[activeCurve].length <= 2;
+  if (latest) text('modeBadge', modePending ? 'Módváltás…' : modeNames[latest.mode] || 'Ismeretlen mód');
 }
 
 function setSlider(channel, value) {
@@ -199,8 +206,13 @@ function render(state) {
   if (!manualSending && !manualQueued && !manualEditing && Date.now() > manualGuardUntil) {
     setSlider('warm', state.mode === 'manual' ? state.manualWarm : state.warm);
     setSlider('cool', state.mode === 'manual' ? state.manualCool : state.cool);
-    text('manualStatus', state.mode === 'manual' ? (state.savePending ? 'Beállítások mentése…' : 'Kézi vezérlés') : 'Állítással kézi módra váltasz');
   }
+  if (state.mode !== 'manual') {
+    clearTimeout(manualTimer); manualQueued = null; manualEditing = false;
+  }
+  if (modePending) text('manualStatus', modeTarget === 'manual' ? 'Kézi mód bekapcsolása…' : 'Kilépés a kézi módból…');
+  else if (state.mode !== 'manual') text('manualStatus', 'A kézi mód ki van kapcsolva. Bekapcsolás után állíthatsz fényerőt.');
+  else if (!manualSending && !manualQueued) text('manualStatus', state.savePending ? 'Beállítások mentése…' : 'Kézi mód aktív');
   if (!dirty && !drag && validSchedule(state.schedule)) {
     const signature = JSON.stringify(state.schedule);
     if (signature !== savedSignature) {
@@ -221,50 +233,78 @@ function render(state) {
   updateControls();
 }
 
-async function refresh() {
-  if (pollBusy) return;
-  pollBusy = true;
-  try { render(await request('/api/state')); }
-  catch { connection(false); }
-  finally { pollBusy = false; }
+function refresh(force = false) {
+  if (refreshPromise) return force ? refreshPromise.then(() => refresh(true)) : refreshPromise;
+  const revision = controlRevision;
+  refreshPromise = request('/api/state').then(state => {
+    if (revision !== controlRevision) return null; // Ignore a poll started before a mode change.
+    render(state);
+    return state;
+  }).catch(() => {
+    if (revision === controlRevision) connection(false);
+    return null;
+  }).finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 async function poll() { await refresh(); setTimeout(poll, 2000); }
 
 function queueManual() {
+  if (!canControlManually()) return;
   manualGuardUntil = Date.now() + 1500;
   for (const channel of ['warm', 'cool']) setSlider(channel, $(channel + 'Slider').value);
-  manualQueued = {warm: $('warmSlider').value, cool: $('coolSlider').value};
+  manualQueued = {warm: $('warmSlider').value, cool: $('coolSlider').value, revision: controlRevision};
   text('manualStatus', 'Fényerő küldése…');
   clearTimeout(manualTimer);
   manualTimer = setTimeout(sendManual, 200);
 }
 async function sendManual() {
   if (manualSending || !manualQueued) return;
-  const payload = manualQueued;
+  const job = manualQueued;
   manualQueued = null;
+  const isCurrent = () => job.revision === controlRevision && canControlManually();
+  if (!isCurrent()) return;
   manualSending = true;
-  try { await mutate('/api/manual', payload); text('manualStatus', 'Kézi vezérlés · beállítva'); }
-  catch (error) { notify(error.message, true); text('manualStatus', 'A módosítás nem sikerült'); }
-  finally {
+  let sent = false;
+  try {
+    sent = !!await mutate('/api/manual', {warm: job.warm, cool: job.cool}, isCurrent);
+  } catch (error) {
+    if (job.revision === controlRevision) notify(error.message, true);
+  } finally {
     manualSending = false;
-    manualGuardUntil = Date.now() + 300;
+    if (job.revision === controlRevision) manualGuardUntil = 0;
     if (manualQueued) { clearTimeout(manualTimer); manualTimer = setTimeout(sendManual, 200); }
-    else await refresh();
+    else if (job.revision === controlRevision && modePending === 0) {
+      const state = await refresh(true);
+      if (sent && job.revision === controlRevision && state && state.mode !== 'manual') notify('A kézi mód már nem aktív.', true);
+    }
   }
 }
 async function changeMode(mode) {
+  const revision = ++controlRevision;
   clearTimeout(manualTimer);
-  manualQueued = null;
-  manualEditing = false;
+  manualQueued = null; manualEditing = false; manualGuardUntil = 0;
   if (mode === 'manual') $('manualPanel').open = true;
+  modeTarget = mode;
   modePending++;
+  text('manualStatus', mode === 'manual' ? 'Kézi mód bekapcsolása…' : 'Kilépés a kézi módból…');
   updateControls();
   try {
     await mutate('/api/mode', {mode});
-    text('manualStatus', mode === 'manual' ? 'Kézi vezérlés' : 'Állítással kézi módra váltasz');
-    await refresh();
-  } catch (error) { notify(error.message, true); }
-  finally { modePending--; updateControls(); }
+    const state = await refresh(true);
+    if (revision !== controlRevision) return;
+    if (!state) throw new Error('A módváltás még nem igazolható. Ellenőrizd a kapcsolatot.');
+    if (state.mode !== mode) throw new Error('A vezérlő nem a kért módot jelzi. Próbáld újra.');
+    if (mode === 'auto') notify(state.clockValid ? 'Automata program aktív.' : 'Automata mód aktív, az óra beállítására vár.');
+  } catch (error) {
+    if (revision === controlRevision) { notify(error.message, true); text('manualStatus', error.message); }
+  } finally {
+    modePending--;
+    if (revision === controlRevision) modeTarget = null;
+    updateControls();
+    if (modePending === 0 && latest && latest.mode === mode) {
+      text('manualStatus', latest.mode === 'manual' ? 'Kézi mód aktív' : 'A kézi mód ki van kapcsolva.');
+    }
+  }
 }
 
 function parseDraftCurve(channel) {
@@ -568,7 +608,7 @@ async function syncClock(button) {
 document.querySelectorAll('.modebtn').forEach(button => button.addEventListener('click', () => changeMode(button.dataset.mode)));
 for (const channel of ['warm', 'cool']) {
   const slider = $(channel + 'Slider');
-  slider.addEventListener('pointerdown', () => manualEditing = true);
+  slider.addEventListener('pointerdown', () => { if (canControlManually()) manualEditing = true; });
   slider.addEventListener('input', queueManual);
   slider.addEventListener('change', () => { manualEditing = false; });
   slider.addEventListener('blur', () => manualEditing = false);

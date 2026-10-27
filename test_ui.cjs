@@ -9,7 +9,7 @@ const assert = require('assert/strict');
 const header = fs.readFileSync(path.join(__dirname, 'src/web_ui.h'), 'utf8');
 const script = header.match(/<script>([\s\S]*?)<\/script>/)[1];
 const elements = new Map(), all = [], calls = [], timers = new Map();
-let activeElement = null, nextTimer = 1, heldPath = null, release = null;
+let activeElement = null, nextTimer = 1, heldPath = null, release = null, holdNextGet = false, releaseGet = null;
 
 class Element {
   constructor(tag = 'div') {
@@ -52,8 +52,12 @@ class Element {
 for (const match of header.matchAll(/id="([^"]+)"/g)) {
   const element = new Element(); element.id = match[1]; elements.set(match[1], element);
 }
-const modeButtons = ['manual', 'auto', 'off'].map(mode => {
-  const element = new Element('button'); element.dataset.mode = mode; return element;
+const modeButtons = [...header.matchAll(/<button\b([^>]*)>/g)].flatMap(match => {
+  const attributes = match[1], classes = attributes.match(/class="([^"]*)"/);
+  if (!classes || !classes[1].split(/\s+/).includes('modebtn')) return [];
+  const id = attributes.match(/id="([^"]*)"/), mode = attributes.match(/data-mode="([^"]*)"/);
+  const element = id ? elements.get(id[1]) : new Element('button');
+  element.dataset.mode = mode[1]; return [element];
 });
 const curveButtons = ['warm', 'cool'].map(curve => {
   const element = new Element('button'); element.dataset.curve = curve; return element;
@@ -90,9 +94,15 @@ const context = vm.createContext({
       assert.equal(options.headers['X-Aqua-Request'], '1');
       const data = Object.fromEntries(new URLSearchParams(options.body));
       if (route === '/api/manual') {
-        state.mode = 'manual'; state.manualWarm = state.warm = Number(data.warm); state.manualCool = state.cool = Number(data.cool);
+        if (state.mode !== 'manual') return {ok: false, status: 409, json: async () => ({ok: false, error: 'Előbb kapcsold be a kézi módot.'})};
+        state.manualWarm = state.warm = Number(data.warm); state.manualCool = state.cool = Number(data.cool);
       }
-      if (route === '/api/mode') { state.mode = data.mode; if (data.mode === 'off') state.warm = state.cool = 0; }
+      if (route === '/api/mode') {
+        state.mode = data.mode;
+        if (data.mode === 'off') state.warm = state.cool = 0;
+        else if (data.mode === 'manual') { state.warm = state.manualWarm; state.cool = state.manualCool; }
+        else { state.warm = 50; state.cool = 40; }
+      }
       if (route === '/api/program') {
         assert.deepEqual(Object.keys(data).sort(), ['coolPoints', 'warmPoints']);
         for (const channel of ['warm', 'cool']) state.schedule[channel] = data[channel + 'Points'].split(';').map(point => {
@@ -102,7 +112,9 @@ const context = vm.createContext({
       if (route === heldPath) await new Promise(resolve => { release = resolve; });
       return {ok: true, json: async () => ({ok: true})};
     }
-    return {ok: true, json: async () => JSON.parse(JSON.stringify(state))};
+    const snapshot = JSON.parse(JSON.stringify(state));
+    if (holdNextGet) { holdNextGet = false; await new Promise(resolve => { releaseGet = resolve; }); }
+    return {ok: true, json: async () => snapshot};
   }
 });
 const run = code => vm.runInContext(code, context);
@@ -189,44 +201,75 @@ function call(name, argument) { context.testEvent = argument; return run(name + 
   context.validTime = validTime; run('draft.warm[1].time=validTime');
   run('parseDraft()');
 
-  run("setSlider('warm',31);setSlider('cool',42);queueManual()");
-  await run("changeMode('off')"); await run('sendManual()');
-  assert.equal(calls.filter(call => call.route === '/api/manual').length, 0);
-  heldPath = '/api/manual'; run("setSlider('warm',37);queueManual()");
-  const manual = run('sendManual()'); await flush(); assert(release);
-  const off = run("changeMode('off')"); release(); await manual; await off; heldPath = null;
-  assert.equal(state.mode, 'off');
-  const posts = calls.filter(call => call.options.method === 'POST');
-  assert.equal(posts.at(-2).route, '/api/manual'); assert.equal(posts.at(-1).route, '/api/mode');
-
-  const savedProgramBeforeModeSwitch = JSON.stringify(state.schedule);
+  const manualEnable = elements.get('manualEnable'), manualExit = elements.get('manualExit');
   const programButton = modeButtons.find(button => button.dataset.mode === 'auto');
   const warmSlider = elements.get('warmSlider');
-  state.mode = 'manual'; await run('refresh()');
-  warmSlider.value = '99'; elements.get('coolSlider').value = '0';
-  warmSlider.listeners.input(); // Start a real slider callback path, then cancel its pending write.
-  await programButton.listeners.click();
-  warmSlider.listeners.change(); // A delayed gesture commit must not recreate a manual command.
-  await run('sendManual()'); await run('refresh()');
-  assert.equal(state.mode, 'auto');
-  assert.equal(run('manualQueued'), null);
-  assert.equal(JSON.stringify(state.schedule), savedProgramBeforeModeSwitch);
-
-  warmSlider.value = '98'; warmSlider.listeners.input();
+  const savedProgramBeforeModeSwitch = JSON.stringify(state.schedule), unsavedDraftBeforeModeSwitch = run('JSON.stringify(draft)');
+  assert.equal(warmSlider.disabled, true);
+  await manualEnable.listeners.click();
+  assert.equal(state.mode, 'manual'); assert.equal(warmSlider.disabled, false);
+  warmSlider.value = '37'; elements.get('coolSlider').value = '19'; warmSlider.listeners.input();
   await run('sendManual()');
-  assert.equal(state.mode, 'manual'); // A new intentional adjustment after auto still controls the lamp.
+  assert.equal(state.manualWarm, 37); assert.equal(state.manualCool, 19);
+  await manualExit.listeners.click();
+  assert.equal(state.mode, 'auto'); assert.equal(warmSlider.disabled, true);
+  assert.equal(elements.get('coolSlider').disabled, true);
+  assert.equal(String(warmSlider.value), '50'); assert.equal(String(elements.get('coolSlider').value), '40');
+  assert.equal(String(elements.get('actualWarm').textContent), '50');
+  assert.equal(String(elements.get('actualCool').textContent), '40');
+  assert.equal(elements.get('modeBadge').textContent, 'Automata program');
+  assert.equal(state.manualWarm, 37); assert.equal(state.manualCool, 19);
+
+  for (const mode of ['auto', 'off']) {
+    await modeButtons.find(button => button.dataset.mode === mode).listeners.click();
+    const manualCount = calls.filter(call => call.route === '/api/manual').length;
+    warmSlider.value = '99'; warmSlider.listeners.input(); warmSlider.listeners.change();
+    await run('sendManual()');
+    assert.equal(state.mode, mode);
+    assert.equal(calls.filter(call => call.route === '/api/manual').length, manualCount);
+    const beforeRejectedWrite = JSON.stringify(state);
+    await assert.rejects(run("request('/api/manual',{warm:'99',cool:'0'})"), /Előbb kapcsold be/);
+    assert.equal(JSON.stringify(state), beforeRejectedWrite); // Another client's late write cannot revive manual mode.
+  }
+
+  await manualEnable.listeners.click();
+  warmSlider.value = '98'; warmSlider.listeners.input(); await run('sendManual()');
+  assert.equal(state.mode, 'manual'); assert.equal(state.manualWarm, 98);
+  warmSlider.value = '99'; warmSlider.listeners.input(); // A queued gesture is cancelled by explicit exit.
+  await manualExit.listeners.click(); warmSlider.listeners.change(); await run('sendManual()');
+  assert.equal(state.mode, 'auto'); assert.equal(state.manualWarm, 98);
+
+  await manualEnable.listeners.click();
   heldPath = '/api/manual'; warmSlider.value = '88'; warmSlider.listeners.input();
   const pendingManual = run('sendManual()'); await flush();
   const automatic = programButton.listeners.click();
+  assert.equal(warmSlider.disabled, true); warmSlider.listeners.input();
   release(); await pendingManual; await automatic; heldPath = null;
-  await run('refresh()'); warmSlider.listeners.change();
-  await run('sendManual()'); await run('refresh()');
-  assert.equal(state.mode, 'auto');
-  assert.equal(run('manualQueued'), null);
+  await run('refresh()'); warmSlider.listeners.change(); await run('sendManual()');
+  assert.equal(state.mode, 'auto'); assert.equal(run('manualQueued'), null);
   const autoPosts = calls.filter(call => call.options.method === 'POST');
   assert.equal(autoPosts.at(-2).route, '/api/manual');
   assert.equal(new URLSearchParams(autoPosts.at(-1).options.body).get('mode'), 'auto');
+
+  await manualEnable.listeners.click();
+  heldPath = '/api/time'; const blockingWrite = run("mutate('/api/time',{epoch:'1793100000'})"); await flush();
+  const manualCountBeforeCancel = calls.filter(call => call.route === '/api/manual').length;
+  warmSlider.value = '77'; warmSlider.listeners.input(); const queuedWrite = run('sendManual()'); await flush();
+  const exitAfterQueue = manualExit.listeners.click();
+  release(); await blockingWrite; await queuedWrite; await exitAfterQueue; heldPath = null;
+  assert.equal(calls.filter(call => call.route === '/api/manual').length, manualCountBeforeCancel);
+  assert.equal(state.mode, 'auto');
+
+  await manualEnable.listeners.click();
+  holdNextGet = true; const oldPoll = run('refresh()'); await flush();
+  const exitDuringPoll = manualExit.listeners.click(); await flush();
+  assert.equal(warmSlider.disabled, true); // A mode change never re-enables controls from an old GET.
+  releaseGet(); await oldPoll; await exitDuringPoll;
+  assert.equal(state.mode, 'auto'); assert.equal(run('latest.mode'), 'auto');
+  assert.equal(elements.get('modeBadge').textContent, 'Automata program');
+  assert.equal(warmSlider.disabled, true);
   assert.equal(JSON.stringify(state.schedule), savedProgramBeforeModeSwitch);
+  assert.equal(run('JSON.stringify(draft)'), unsavedDraftBeforeModeSwitch);
 
   heldPath = '/api/program'; const save = run('saveProgram()'); await flush();
   run("draft.warm[0].level='29';markDirty()"); release(); await save; heldPath = null;
@@ -239,5 +282,5 @@ function call(name, argument) { context.testEvent = argument; return run(name + 
   assert.equal(elements.get('manualStatus').textContent, 'Beállítások mentése…');
   state.storageOk = false; await run('refresh()');
   assert.equal(elements.get('storageNotice').hidden, false);
-  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; manual/OFF/auto late-change and save/edit races; sensor/clock/storage status');
+  console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; explicit manual ON/OFF; guarded slider writes; stale polls and save/edit races; sensor/clock/storage status');
 })().catch(error => { console.error(error); process.exitCode = 1; });
