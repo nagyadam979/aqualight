@@ -29,7 +29,7 @@ A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s na
 2. Csatlakozz ehhez a hálózathoz, és nyisd meg a `http://192.168.4.1/` címet. Az ESP akkor is kiszolgálja az oldalt, ha nincs internet.
 3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a `http://akvarium.local/` címen is elérhető. A saját Wi-Fi tartalék hozzáférésként megmarad.
 4. Állítsd be az órát a telefon/böngésző idejéről, vagy internetkapcsolat mellett várd meg az NTP-szinkront. Az óra magyar téli–nyári időszámítást használ.
-5. A napi grafikonon válaszd ki a meleg vagy hideg csatornát. A pontok húzásával módosíthatod az időt és a fényerőt, dupla koppintással új pontot adhatsz hozzá. A változások csak a Mentés után kerülnek a lámpára; ezután válts automata módra. A kézi vezérlés külön lenyitható részben érhető el.
+5. A napi grafikonon válaszd ki a meleg vagy hideg csatornát. A pontok húzásával módosíthatod az időt és a fényerőt, dupla koppintással új pontot adhatsz hozzá. A változások csak a Mentés után kerülnek a lámpára; ezután válts automata módra. A kézi vezérlés külön lenyitható részben érhető el; külön gombbal kapcsolható be, kikapcsolása automata módra tér vissza. A csúszkák csak bekapcsolt kézi módban állíthatók.
 
 Új eszközön a lámpa kikapcsolt módban indul. A szerkeszthető mintaprogram 08:00–09:00 között 0-ról 50%-ra emel mindkét csatornán, 17:00-ig tartja, majd 18:00-ig lecsökkenti 0-ra. Mentése önmagában nem kapcsol automata módra.
 
@@ -46,7 +46,7 @@ A `GET /api/state` az aktuális állapotot adja vissza JSON-ként, jelszavak né
 | Végpont | Mezők |
 | --- | --- |
 | `/api/mode` | `mode=off`, `manual` vagy `auto` |
-| `/api/manual` | `warm=0..100`, `cool=0..100`; kézi módra vált |
+| `/api/manual` | `warm=0..100`, `cool=0..100`; csak az előzőleg `/api/mode` kéréssel bekapcsolt kézi módban állít értéket, egyébként HTTP 409, változtatás nélkül |
 | `/api/program` | `warmPoints=perc,fényerő;perc,fényerő;…` és `coolPoints=perc,fényerő;perc,fényerő;…`; csatornánként 2–16 növekvő, egyedi percérték 0–1439 között |
 | `/api/time` | `epoch=` UTC Unix-másodperc, 2024–2099 között |
 | `/api/wifi` | `ssid=`, `password=`; a jelszó üres nyílt hálózatnál, egyébként 8–63 bájt |

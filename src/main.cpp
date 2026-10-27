@@ -408,8 +408,10 @@ void configureRoutes() {
     if (!integerArg("warm", 100, warm) || !integerArg("cool", 100, cool)) {
       errorResponse(400, "Mindkét fényerő 0–100 közötti egész szám legyen."); return;
     }
+    if (settings.mode != aqua::Mode::Manual) {
+      errorResponse(409, "Előbb kapcsold be a kézi módot."); return;
+    }
     if (!pwmOk) { errorResponse(503, "A PWM-kimenet hibás."); return; }
-    settings.mode = aqua::Mode::Manual;
     settings.manualWarm = warm;
     settings.manualCool = cool;
     settingsDirty = true;
