@@ -15,6 +15,8 @@
 #include <sys/time.h>
 
 #include "schedule.h"
+#include "cloud_update.h"
+#include "maintenance.h"
 #include "web_ui.h"
 
 // Confirmed wiring: warm 2700 K -> GPIO0, cool 6500 K -> GPIO4.
@@ -36,6 +38,7 @@ aqua::Levels actual;
 bool pwmOk = false;
 bool pwmAttached[2] = {false, false};
 bool preferencesOpen = false;
+bool serverStarted = false;
 bool storageOk = false;
 bool settingsDirty = false;
 uint32_t lastManualChange = 0;
@@ -169,6 +172,17 @@ bool saveSettings(const aqua::Settings &value) {
   return storageOk;
 }
 
+bool flushPendingSettings() {
+  if (!settingsDirty) return preferencesOpen && storageOk;
+  const uint32_t now = millis();
+  if (lastSaveFailed && !aqua::due(now, lastSaveAttempt, 30000)) return false;
+  lastSaveAttempt = now;
+  lastSaveFailed = !saveSettings(settings);
+  if (lastSaveFailed) return false;
+  settingsDirty = false;
+  return true;
+}
+
 bool saveAndApply(const aqua::Settings &candidate) {
   if (!saveSettings(candidate)) return false;
   settings = candidate;
@@ -210,6 +224,11 @@ void loadSettings() {
 void startNetwork() {
   WiFi.persistent(false);
   WiFi.setHostname("led-control");
+  WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      Serial.printf("[NET] STA disconnected, reason=%u.\n", static_cast<unsigned>(info.wifi_sta_disconnected.reason));
+    }
+  });
   WiFi.mode(WIFI_AP_STA);  // Enable RF entropy before creating the first AP password.
   if (apPassword.length() != 12) {
     constexpr char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -374,8 +393,31 @@ void sendState() {
   state += "},\"warmPin\":0,\"coolPin\":4,\"storageOk\":"; state += storageOk ? "true" : "false";
   state += ",\"savePending\":"; state += settingsDirty ? "true" : "false";
   state += ",\"uptime\":"; state += String(static_cast<unsigned long long>(uptimeMs / 1000));
+  state += ",\"update\":"; state += ledota::stateJson();
+  state += ",\"maintenance\":"; state += maintenance::stateJson();
   state += '}';
   sendJson(200, state);
+}
+
+String maintenanceStatus() {
+  time_t epoch;
+  tm local = {};
+  const bool clockValid = readClock(epoch, local);
+  String status = "mode="; status += modeName(settings.mode);
+  status += " warm="; status += String(actual.warm, 2);
+  status += "% cool="; status += String(actual.cool, 2);
+  status += "% pwm="; status += pwmOk ? "ok" : "error";
+  status += " storage="; status += storageOk ? "ok" : "error";
+  status += " savePending="; status += settingsDirty ? "yes" : "no";
+  status += " clock="; status += clockValid ? "set" : "unset";
+  status += " sensor="; status += sensorOk ? "ok" : "error";
+  if (sensorOk) {
+    status += " temperature="; status += String(temperature, 2);
+    status += "C humidity="; status += String(humidity, 2); status += "%RH";
+  }
+  status += "\r\nupdate="; status += ledota::stateJson();
+  status += "\r\nmaintenance="; status += maintenance::stateJson();
+  return status;
 }
 
 void configureRoutes() {
@@ -388,6 +430,20 @@ void configureRoutes() {
   });
   server.on("/favicon.ico", HTTP_GET, [] { server.send(204); });
   server.on("/api/state", HTTP_GET, sendState);
+  server.on("/api/update/check", HTTP_POST, [] {
+    if (!writableRequest(0)) return;
+    if (WiFi.status() != WL_CONNECTED) {
+      errorResponse(503, "Az internetes frissítéshez csatlakozz Wi-Fi-hálózathoz."); return;
+    }
+    time_t epoch;
+    tm local = {};
+    if (!readClock(epoch, local)) { errorResponse(503, "Előbb szinkronizáld az órát."); return; }
+    if (ledota::busy() || maintenance::rebootRequested()) {
+      errorResponse(409, "Frissítés vagy újraindítás már folyamatban van."); return;
+    }
+    if (!ledota::requestCheck()) { errorResponse(503, "A frissítési keresés most nem indítható."); return; }
+    sendJson(202, "{\"ok\":true}");
+  });
   server.on("/api/mode", HTTP_POST, [] {
     if (!writableRequest(1)) return;
     const String mode = server.arg("mode");
@@ -466,6 +522,7 @@ void configureRoutes() {
   });
   server.onNotFound([] { errorResponse(404, "Nincs ilyen oldal vagy végpont."); });
   server.begin();
+  serverStarted = true;
 }
 
 void setup() {
@@ -484,6 +541,8 @@ void setup() {
   configTzTime(TIMEZONE, "pool.ntp.org", "time.cloudflare.com", "time.google.com");
   startNetwork();
   configureRoutes();
+  ledota::begin();
+  maintenance::begin(apPassword, flushPendingSettings, maintenanceStatus);
   sensorReady = startSensor();
   lastSensor = millis() - 5000;
   previousMillis = millis();
@@ -508,5 +567,9 @@ void loop() {
     lastSaveFailed = !saveSettings(settings);
     if (!lastSaveFailed) settingsDirty = false;
   }
+  if (maintenance::rebootRequested() && settingsDirty) flushPendingSettings();
+  ledota::poll(pwmOk && storageOk && serverStarted, !settingsDirty && storageOk);
+  maintenance::poll();
+  if (maintenance::rebootRequested()) maintenance::rebootIfSafe(flushPendingSettings() && !settingsDirty);
   delay(1);
 }

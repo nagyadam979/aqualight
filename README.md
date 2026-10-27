@@ -1,6 +1,6 @@
 # AquaLight
 
-ESP32-C3 SuperMini akváriumvilágítás két fehér LED-szalaggal és AHT20-szenzorral. A teljes webes felület az ESP-n található; nem használ külső JavaScriptet vagy felhős szolgáltatást.
+ESP32-C3 SuperMini akváriumvilágítás két fehér LED-szalaggal és AHT20-szenzorral. A teljes webes felület és a világításvezérlés az ESP-n található, külső JavaScript nélkül. Az opcionális, aláírt firmware-frissítés külön Firebase-csatornát használ; a világítás internet és felhő nélkül is működik.
 
 | Jel | GPIO |
 | --- | --- |
@@ -18,6 +18,8 @@ pio run -e aqualight
 pio run -e aqualight -t upload
 pio device monitor
 python3 test_controller.py
+python3 test_maintenance.py
+python3 test_ota.py
 node test_ui.cjs
 ```
 
@@ -49,6 +51,7 @@ A `GET /api/state` az aktuális állapotot adja vissza JSON-ként, jelszavak né
 | `/api/manual` | `warm=0..100`, `cool=0..100`; csak az előzőleg `/api/mode` kéréssel bekapcsolt kézi módban állít értéket, egyébként HTTP 409, változtatás nélkül |
 | `/api/program` | `warmPoints=perc,fényerő;perc,fényerő;…` és `coolPoints=perc,fényerő;perc,fényerő;…`; csatornánként 2–16 növekvő, egyedi percérték 0–1439 között |
 | `/api/time` | `epoch=` UTC Unix-másodperc, 2024–2099 között |
+| `/api/update/check` | üres űrlap; internetes Wi-Fi és érvényes óra szükséges, HTTP 202 csak a keresés sorba állítását jelzi |
 | `/api/wifi` | `ssid=`, `password=`; a jelszó üres nyílt hálózatnál, egyébként 8–63 bájt |
 
 A sikeres válasz `{"ok":true}`. Hiba esetén a válasz HTTP-hibakódot és `{"ok":false,"error":"…"}` objektumot tartalmaz. A program mentése atomikus: ha bármelyik csatorna görbéje érvénytelen, egyik aktív görbe sem változik meg. A Wi-Fi-mentés sikere a csatlakozási kísérlet indítását jelzi; a tényleges kapcsolat az állapotból derül ki. A kikapcsolás tárolóhiba esetén is végrehajtódik, bár a mentés hibát jelezhet.
@@ -56,3 +59,52 @@ A sikeres válasz `{"ok":true}`. Hiba esetén a válasz HTTP-hibakódot és `{"o
 A hostteszt a két független görbét, az atomikus kettős validálást, a parsereket, módokat, PWM-számítást, időzítést és az időzóna váltásait ellenőrzi. A valódi PWM-jelet, fényerőt, szenzort, HTTP-kiszolgálást, Wi-Fi-t és flashbe mentést hardveren kell ellenőrizni.
 
 A `node test_ui.cjs` a tényleges beágyazott JavaScriptet futtatja egyszerű DOM- és hálózati modellel. A független görbéket, húzást, dupla koppintást, pontkorlátokat, fókuszt és a mentés/módváltás versenyhelyzeteit ellenőrzi; a valódi böngészős érintéskezelést és megjelenést nem bizonyítja.
+
+
+## Firmware-frissítés
+
+Az alkalmazás verziója a `LED_CONTROL_VERSION` fordítási makró; az alapkiadás **1.1.0**. Az `update` és `maintenance` állapotmezők jelszó nélkül jelzik a frissítés állapotát. A `min_spiffs.csv` partíciós tábla két `0x1e0000` méretű alkalmazáshelyet használ; az NVS címe/mérete (`0x9000`, `0x5000`) és az `otadata` (`0xe000`, `0x2000`) megmarad. A partíciós tábla egyszeri telepítése USB-n történik, az NVS törlése nélkül. Ezután az OTA csak az inaktív alkalmazáshelyet írja.
+
+A webes frissítés gomb külön, nyilvános Firebase-kiadási csatornán keres új firmware-t. A kiadás aláírt manifesztből és alkalmazásképből áll; a nyilvános firmware nem tartalmaz Wi-Fi- vagy eszközjelszót. A kiadási cél a BeeScale által is használt `terrarium1` Firebase-projekt külön `led-control-terrarium1` Hosting-oldala; a csatorna címe `https://led-control-terrarium1.web.app/channels/stable.json`. A meglévő BeeScale-oldal és a CafePlant projekt változatlan. A vezérlő indulás után 60 másodperccel, majd sikeres ellenőrzések után 30 percenként keres kiadást; a webes gombbal korábban is indítható keresés. A hálózati letöltés külön munkaszálon fut. A beállításmentés befejezése előtt nincs szándékos újraindítás; az új felhős kép indulási állapotát a vezérlő ellenőrzi.
+
+A privát aláírókulcs a repositoryn kívül, a `~/.config/led-control/ota-signing-key.pem` fájlban marad, `0600` jogosultsággal. A firmware-be és Gitbe csak a `src/ota_public_key.h` nyilvános ellenőrzőkulcsa kerül. A kiadóeszköz OpenSSL 3.2 vagy újabb verziót használ; alapértelmezése dry run, fájlírás és publikálás nélkül.
+
+```sh
+python3 release_firmware.py --firmware .pio/build/aqualight/firmware.bin \
+  --release-id 1.1.0 --version 1.1.0
+python3 release_firmware.py --firmware .pio/build/aqualight/firmware.bin \
+  --release-id 1.1.0 --version 1.1.0 --prepare \
+  --output "$HOME/.local/share/led-control/hosting"
+firebase deploy --project terrarium1 \
+  --config "$HOME/.local/share/led-control/hosting/firebase.json" \
+  --only hosting --non-interactive
+```
+
+A `--prepare` csak a külön, repositoryn kívüli Hosting-kimenetet készíti elő. Kizárólag az utolsó, külön kiadott Firebase-parancs publikál; annak konfigurációja a dedikált `led-control-terrarium1` site-ot nevezi meg. Korábbi kiadások megmaradnak, azonos kiadásazonosító eltérő képpel nem írható felül.
+
+Helyi, hitelesített **ArduinoOTA** a `led-control.local:3232` címen is elérhető. Jelszava az eszköz meglévő, egyedi AP-jelszava, amely a soros indulási naplóban látható; nem kerül API-válaszba vagy Telnet-naplóba. Csak alkalmazásképet tölts fel (`firmware.bin`), ne teljes flashképet vagy fájlrendszerképet. Az Arduino **3.3.8** csomaghoz tartozó `tools/espota.py` feltöltőt használd: ez támogatja a PBKDF2-HMAC-SHA256 hitelesítést, a régebbi feltöltők nem feltétlenül kompatibilisek.
+
+Példa a már elkészített alkalmazáskép feltöltésére; a jelszót interaktívan olvasd be, ne mentsd a projektbe:
+
+```sh
+read -s LED_OTA_PASSWORD
+python3 ~/.platformio/packages/framework-arduinoespressif32/tools/espota.py \
+  -i led-control.local -p 3232 -a "$LED_OTA_PASSWORD" \
+  -f .pio/build/aqualight/firmware.bin
+unset LED_OTA_PASSWORD
+```
+
+A helyi és felhős OTA közös zárral védi a flashírást. Helyi feltöltés előtt a függő kézi beállítások mentődnek; mentési hiba esetén a feltöltés megszakad. Sikeres helyi feltöltés után az újraindítás szintén a biztonságos mentési állapotra vár.
+
+## Telnet diagnosztika
+
+A `telnet led-control.local 23` egyetlen klienssel használható, ugyanazzal az egyedi AP-jelszóval. A belépés 10 másodperc után lejár, legfeljebb három hibás próbálkozás engedélyezett; ezután 30 másodperces szünet következik. Az inaktív munkamenet 5 perc után bezárul. A Telnet titkosítatlan helyi protokoll, ezért megbízható LAN-on/AP-n használd; nem általános parancsértelmező és nem tükrözi a soros naplót.
+
+| Parancs | Művelet |
+| --- | --- |
+| `help` | Engedélyezett parancsok |
+| `status` | Olvasható világítás-, szenzor-, tároló- és frissítési pillanatkép, jelszavak nélkül |
+| `ota-check` | Aláírt felhős frissítés keresésének sorba állítása |
+| `reboot` | Újraindítás a függő beállítások sikeres mentése után |
+
+A parser legfeljebb 96 karakteres sorokat, CRLF/CR-NUL lezárást és alap Telnet IAC-egyeztetést kezel. A bemenet, kimeneti sor és a ciklusonkénti munka korlátozott; nem olvasó kliens nem fogja meg a vezérlést. A `python3 test_maintenance.py` az éles parser/beléptetés kódját ASan/UBSan mellett ellenőrzi; TCP-t, OTA-átvitelt, flashváltást és újraindítást hardveren kell ellenőrizni.
