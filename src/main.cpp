@@ -209,7 +209,7 @@ void loadSettings() {
 
 void startNetwork() {
   WiFi.persistent(false);
-  WiFi.setHostname("akvarium");
+  WiFi.setHostname("led-control");
   WiFi.mode(WIFI_AP_STA);  // Enable RF entropy before creating the first AP password.
   if (apPassword.length() != 12) {
     constexpr char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -231,7 +231,7 @@ void startNetwork() {
     WiFi.begin(wifi.ssid, wifi.password);
     lastWifiAttempt = millis();
   }
-  if (MDNS.begin("akvarium")) MDNS.addService("http", "tcp", 80);
+  if (MDNS.begin("led-control")) MDNS.addService("http", "tcp", 80);
 }
 
 void updateNetwork(uint32_t now) {
@@ -243,7 +243,7 @@ void updateNetwork(uint32_t now) {
   }
   const bool connected = WiFi.status() == WL_CONNECTED;
   if (connected && !wasConnected) {
-    Serial.printf("[NET] STA URL: http://%s/ (http://akvarium.local/)\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[NET] STA URL: http://%s/ (http://led-control.local/)\n", WiFi.localIP().toString().c_str());
   }
   if (!connected && wifi.ssid[0] && !wifiPending && aqua::due(now, lastWifiAttempt, 30000)) {
     WiFi.reconnect();

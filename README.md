@@ -27,7 +27,7 @@ A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s na
 
 1. A soros naplóban megjelenik az `AquaLight-…` Wi-Fi neve és az első induláskor generált, eszközönként különböző jelszó. A jelszó újraindításkor megmarad.
 2. Csatlakozz ehhez a hálózathoz, és nyisd meg a `http://192.168.4.1/` címet. Az ESP akkor is kiszolgálja az oldalt, ha nincs internet.
-3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a `http://akvarium.local/` címen is elérhető. A saját Wi-Fi tartalék hozzáférésként megmarad.
+3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a `http://led-control.local/` címen is elérhető. A saját Wi-Fi tartalék hozzáférésként megmarad.
 4. Állítsd be az órát a telefon/böngésző idejéről, vagy internetkapcsolat mellett várd meg az NTP-szinkront. Az óra magyar téli–nyári időszámítást használ.
 5. A napi grafikonon válaszd ki a meleg vagy hideg csatornát. A pontok húzásával módosíthatod az időt és a fényerőt, dupla koppintással új pontot adhatsz hozzá. A változások csak a Mentés után kerülnek a lámpára; ezután válts automata módra. A kézi vezérlés külön lenyitható részben érhető el; külön gombbal kapcsolható be, kikapcsolása automata módra tér vissza. A csúszkák csak bekapcsolt kézi módban állíthatók.
 

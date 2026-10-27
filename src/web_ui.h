@@ -224,7 +224,7 @@ function render(state) {
   }
   const network = state.network || {};
   text('wifiStatus', network.connected ? (network.ssid || 'Csatlakoztatva') : (network.ssid ? 'Csatlakozás: ' + network.ssid : 'Nincs beállítva'));
-  text('wifiAddress', network.connected && network.ip ? network.ip + ' · akvarium.local' : 'Csatlakozz a saját hálózathoz');
+  text('wifiAddress', network.connected && network.ip ? network.ip + ' · led-control.local' : 'Csatlakozz a saját hálózathoz');
   text('apName', network.apActive ? (network.apSsid || 'Elérhető') : 'Nem aktív');
   text('apAddress', network.apIp || '192.168.4.1');
   text('timeInfo', !state.clockValid ? 'Az óra még nincs beállítva. Internetes kapcsolat vagy az alábbi gomb segítségével szinkronizálhatod.' : state.timeSource === 'ntp' ? 'Az idő interneten szinkronizálva. Magyar téli–nyári időszámítás.' : 'Az idő erről az eszközről beállítva. Magyar téli–nyári időszámítás.');
