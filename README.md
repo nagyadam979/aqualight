@@ -110,3 +110,7 @@ A `telnet led-control.local 23` egyetlen klienssel használható, ugyanazzal az 
 | `reboot` | Újraindítás a függő beállítások sikeres mentése után |
 
 A parser legfeljebb 96 karakteres sorokat, CRLF/CR-NUL lezárást és alap Telnet IAC-egyeztetést kezel. A bemenet, kimeneti sor és a ciklusonkénti munka korlátozott; nem olvasó kliens nem fogja meg a vezérlést. A `python3 test_maintenance.py` az éles parser/beléptetés kódját ASan/UBSan mellett ellenőrzi; TCP-t, OTA-átvitelt, flashváltást és újraindítást hardveren kell ellenőrizni.
+
+## Licenc
+
+MIT – lásd a [LICENSE](LICENSE) fájlt.
