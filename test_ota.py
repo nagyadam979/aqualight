@@ -95,6 +95,55 @@ int main() {
                             "-o", str(binary)], input=source, text=True, check=True)
             subprocess.run([str(binary)], check=True)
 
+    def test_board_targets_cannot_cross_over(self):
+        source = r'''
+#include "ota_contract.h"
+#include <cassert>
+int main() {
+  using namespace ledota;
+  Manifest one{1,"led-control-esp32c3-1ch","stable","1.1.0","1ch-1",
+    "/releases/1ch-1/firmware.bin",std::string(64,'a'),1024};
+  Manifest two{1,"led-control-esp32c3","stable","1.1.0","release-1",
+    "/releases/release-1/firmware.bin",std::string(64,'a'),1024};
+#if LED_CHANNELS == 1
+  assert(validManifest(one) && !validManifest(two));
+  assert(std::strstr(CHANNEL_URL, "/channels/stable-1ch.json"));
+#else
+  assert(validManifest(two) && !validManifest(one));
+  assert(std::strstr(CHANNEL_URL, "/channels/stable.json"));
+#endif
+}
+'''
+        for define in ("-DLED_CHANNELS=1", "-DLED_CHANNELS=2"):
+            with tempfile.TemporaryDirectory(prefix="led-ota-board-") as folder:
+                binary = Path(folder) / "board"
+                subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror", define,
+                                "-I", str(ROOT / "src"), "-x", "c++", "-", "-o", str(binary)],
+                               input=source, text=True, check=True)
+                subprocess.run([str(binary)], check=True)
+
+    def test_single_channel_release_target_and_channel(self):
+        with tempfile.TemporaryDirectory(prefix="led-ota-1ch-") as folder:
+            temp = Path(folder)
+            key, public = temp / "key.pem", temp / "public.pem"
+            key.write_bytes(release.openssl(["genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"]))
+            public.write_bytes(release.openssl(["pkey", "-in", str(key), "-pubout"]))
+            (temp / "src").mkdir()
+            (temp / "src/ota_public_key.h").write_bytes(public.read_bytes())
+            firmware = temp / "firmware.bin"
+            firmware.write_bytes(fixture_image())
+            with patch.object(release, "ROOT", temp):
+                with self.assertRaises(ValueError):
+                    release.prepare_release(firmware, key, "release-1", "1.1.0", "1ch")
+                with self.assertRaises(ValueError):
+                    release.prepare_release(firmware, key, "1ch-1.1.0", "1.1.0", "nope")
+                image, envelope = release.prepare_release(firmware, key, "1ch-1.1.0", "1.1.0", "1ch")
+                self.assertEqual(json.loads(json.loads(envelope)["manifest"])["target"], "led-control-esp32c3-1ch")
+                output = (temp / "hosting").resolve()
+                release.write_release(output, "1ch-1.1.0", image, envelope, "1ch")
+                self.assertEqual((output / "public/channels/stable-1ch.json").read_bytes(), envelope)
+                self.assertFalse((output / "public/channels/stable.json").exists())
+
     def test_actual_poll_health_deadline_and_reboot_gate(self):
         implementation = firmware_function("void poll(bool applicationHealthy, bool canReboot)")
         source = r'''

@@ -76,7 +76,11 @@ const state = {
   network: {connected: true, ssid: '<img src=x onerror=alert(1)>', ip: '192.168.1.2', apActive: true, apSsid: 'AquaLight-test', apIp: '192.168.4.1'},
   storageOk: true, savePending: false
 };
+const singleChannel = process.env.UI_CHANNELS === '1';
+const initTexts = {};
 const document = {
+  documentElement: {dataset: {channels: singleChannel ? '1' : '2'}},
+  querySelector: selector => initTexts[selector] || (initTexts[selector] = new Element()),
   get activeElement() { return activeElement; },
   getElementById: id => elements.get(id) || all.find(element => element.id === id),
   createElement: tag => new Element(tag), hidden: false, addEventListener() {},
@@ -132,7 +136,31 @@ function eventAt(minute, level, target = elements.get('graph'), extra = {}) {
 }
 function call(name, argument) { context.testEvent = argument; return run(name + '(testEvent)'); }
 
+async function singleChannelTest() {
+  run(script); await flush(); await flush();
+  assert.equal(run('single'), true);
+  assert.equal(elements.get('points').children.length, 4);
+  // Only one curve is drawn and the cool outputs/curve are never exposed.
+  assert.equal((elements.get('graph').innerHTML.match(/fill="url\(#/g) || []).length, 1);
+  assert.equal(elements.get('selectedChannel').textContent, 'Világítás · 1 csatorna');
+  // Saving sends the single curve for both fields so the unchanged API contract holds.
+  run("insertPoint('warm', 600, 20)"); await flush();
+  await run('saveProgram()'); await flush();
+  const program = calls.filter(c => c.route === '/api/program').pop();
+  const data = Object.fromEntries(new URLSearchParams(program.options.body));
+  assert.equal(data.warmPoints, data.coolPoints);
+  assert.ok(data.warmPoints.includes('600,20'));
+  // Manual brightness: the hidden second channel is always 0.
+  state.mode = 'manual'; await run('refresh()');
+  elements.get('warmSlider').value = '37'; run('queueManual()');
+  await run('sendManual()'); await flush();
+  const manual = calls.filter(c => c.route === '/api/manual').pop();
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(manual.options.body)), {warm: '37', cool: '0'});
+  console.log('PASS UI single channel: one curve, shared program encoding, manual cool fixed at 0');
+}
+
 (async () => {
+  if (singleChannel) return singleChannelTest();
   run(script); await flush(); await flush();
   assert.equal(elements.get('temperature').textContent, '25,6');
   assert.equal(elements.get('points').children.length, 4);

@@ -18,7 +18,11 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent
-TARGET = "led-control-esp32c3"
+# board -> (manifest target, channel file, required release-ID prefix)
+BOARDS = {
+    "2ch": ("led-control-esp32c3", "stable.json", ""),
+    "1ch": ("led-control-esp32c3-1ch", "stable-1ch.json", "1ch-"),
+}
 CHANNEL = "stable"
 SITE = "led-control-terrarium1"
 MAX_IMAGE_SIZE = 0x1E0000
@@ -84,14 +88,19 @@ def signing_public_key(private_key):
     return public
 
 
-def prepare_release(firmware, private_key, release_id, version):
+def prepare_release(firmware, private_key, release_id, version, board="2ch"):
+    if board not in BOARDS:
+        raise ValueError("Unknown board")
+    target, _, prefix = BOARDS[board]
     if not identifier(release_id) or not identifier(version, True):
         raise ValueError("Release ID or version is invalid")
+    if not release_id.startswith(prefix):
+        raise ValueError(f"Release ID for board {board} must start with {prefix!r}")
     image = Path(firmware).read_bytes()
     validate_image(image)
     signing_public_key(private_key)
     manifest = canonical({
-        "schema": 1, "target": TARGET, "channel": CHANNEL,
+        "schema": 1, "target": target, "channel": CHANNEL,
         "release_id": release_id, "version": version,
         "image_path": f"/releases/{release_id}/firmware.bin",
         "size": len(image), "sha256": hashlib.sha256(image).hexdigest(),
@@ -136,14 +145,14 @@ def write_atomic(path, data, immutable=False):
             temporary.unlink(missing_ok=True)
 
 
-def write_release(output, release_id, image, envelope):
-    if not identifier(release_id):
+def write_release(output, release_id, image, envelope, board="2ch"):
+    if not identifier(release_id) or board not in BOARDS:
         raise ValueError("Release ID is invalid")
     output = Path(output).expanduser().resolve()
     if output == ROOT or ROOT in output.parents:
         raise ValueError("Release output must be outside the source repository")
     paths = [output / "firebase.json", output / "public/releases" / release_id / "firmware.bin",
-             output / "public/releases" / release_id / "manifest.json", output / "public/channels/stable.json"]
+             output / "public/releases" / release_id / "manifest.json", output / "public/channels" / BOARDS[board][1]]
     if any(output not in path.resolve().parents for path in paths):
         raise ValueError("Release output contains a path outside its root")
     # Existing releases are retained. Conflicts never advance the channel selector.
@@ -160,15 +169,17 @@ def main(argv=None):
     parser.add_argument("--private-key", type=Path, default=DEFAULT_KEY)
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--board", choices=sorted(BOARDS), default="2ch",
+                        help="2ch: two-channel board (default); 1ch: single-channel board, release ID must start with 1ch-")
     parser.add_argument("--prepare", action="store_true", help="write local Hosting files; never publishes")
     parser.add_argument("--output", type=Path, help="persistent Hosting output outside the source repository")
     args = parser.parse_args(argv)
     if args.prepare != bool(args.output):
         parser.error("--prepare and --output must be used together; omit both for a dry run")
     try:
-        image, envelope = prepare_release(args.firmware, args.private_key, args.release_id, args.version)
+        image, envelope = prepare_release(args.firmware, args.private_key, args.release_id, args.version, args.board)
         if args.prepare:
-            write_release(args.output, args.release_id, image, envelope)
+            write_release(args.output, args.release_id, image, envelope, args.board)
             print(f"Prepared {args.release_id}: {len(image)} bytes, site {SITE}; no cloud operation")
         else:
             print(f"Dry run {args.release_id}: {len(image)} bytes; signed with matching key, no files written")

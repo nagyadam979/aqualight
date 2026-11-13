@@ -6,8 +6,18 @@
 #include <string>
 
 namespace ledota {
+#ifndef LED_CHANNELS
+#define LED_CHANNELS 2
+#endif
 constexpr char HOST[] = "https://led-control-terrarium1.web.app";
+#if LED_CHANNELS == 1
+// The single-channel board has its own target and channel file so firmware images cannot cross over.
+constexpr char CHANNEL_URL[] = "https://led-control-terrarium1.web.app/channels/stable-1ch.json";
+constexpr char TARGET[] = "led-control-esp32c3-1ch";
+#else
 constexpr char CHANNEL_URL[] = "https://led-control-terrarium1.web.app/channels/stable.json";
+constexpr char TARGET[] = "led-control-esp32c3";
+#endif
 constexpr std::size_t MAX_IMAGE_SIZE = 0x1e0000;
 constexpr std::size_t MAX_MANIFEST_SIZE = 2048;
 constexpr std::size_t MAX_ENVELOPE_SIZE = 4096;
@@ -30,7 +40,7 @@ inline bool validIdentifier(const std::string &value, bool version = false) {
 }
 
 inline bool validManifest(const Manifest &m) {
-  if (m.schema != 1 || m.target != "led-control-esp32c3" || m.channel != "stable" ||
+  if (m.schema != 1 || m.target != TARGET || m.channel != "stable" ||
       !validIdentifier(m.version, true) || !validIdentifier(m.releaseId) ||
       m.imagePath != "/releases/" + m.releaseId + "/firmware.bin" ||
       m.size < 288 || m.size > MAX_IMAGE_SIZE || m.sha256.size() != 64) return false;

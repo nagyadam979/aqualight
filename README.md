@@ -11,6 +11,26 @@ ESP32-C3 SuperMini akváriumvilágítás két fehér LED-szalaggal és AHT20-sze
 
 A PWM alapértéke 1 kHz, 10 bit, aktív magas vezérlés. A polaritás a `src/main.cpp` elején csatornánként változtatható.
 
+## Egycsatornás változat
+
+Az egycsatornás lap (ugyanaz az ESP32-C3 SuperMini) külön PlatformIO környezetet használ: `aqualight1ch`.
+
+| Jel | GPIO |
+| --- | --- |
+| PWM (egyetlen LED-csatorna) | 4 |
+| AHT20 SDA | 1 |
+| AHT20 SCL | 0 |
+
+```sh
+pio run -e aqualight1ch
+pio run -e aqualight1ch -t upload
+UI_CHANNELS=1 node test_ui.cjs
+```
+
+A felület egyetlen görbét és egyetlen kézi csúszkát mutat; az API ugyanaz marad (a `cool` mező ezen a lapon mindig 0, a `coolPoints` a `warmPoints` másolata). Webcíme csatlakozás után ugyanaz, `http://led-control.local/`; ha mindkét lap egyszerre van a hálózaton, az azonos mDNS-név ütközhet, ilyenkor az IP-címet használd.
+
+Az OTA külön csatornát használ: a manifeszt célja `led-control-esp32c3-1ch`, a csatornafájl `channels/stable-1ch.json`, és a kiadási azonosító `1ch-` előtagú. Így a két lap firmware-e nem cserélhető fel. Kiadás: `python3 release_firmware.py --board 1ch --firmware .pio/build/aqualight1ch/firmware.bin --release-id 1ch-1.1.0 --version 1.1.0`.
+
 ## Fordítás és feltöltés
 
 ```sh

@@ -1,8 +1,17 @@
 #pragma once
 #include <Arduino.h>
 
+#ifndef LED_CHANNELS
+#define LED_CHANNELS 2
+#endif
+#if LED_CHANNELS == 1
+#define LED_UI_CHANNELS "1"
+#else
+#define LED_UI_CHANNELS "2"
+#endif
+
 const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
-<html lang="hu">
+<html lang="hu" data-channels=")AQUAHTML" LED_UI_CHANNELS R"AQUAHTML(">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -22,6 +31,7 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
 @media(min-width:700px){.chart,.chart svg{height:330px}.curvebtn{padding:10px 14px}.manualbody{padding:0 22px 23px}.precision .tablehead,.precision .pointrow{grid-template-columns:150px minmax(0,1fr) 44px}}@media(max-width:360px){.curvebtn{padding:8px;font-size:11px;gap:6px}.curvecount{font-size:9px}.precision .tablehead,.precision .pointrow{grid-template-columns:100px minmax(0,1fr) 44px;gap:8px}}
 .manualactions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}.manualactions .modebtn{max-width:none;min-height:48px;font-size:11px;line-height:1.4}.manualstatus{min-height:18px;font-size:11px;color:var(--muted);margin:0 0 15px}
 .updateprogress{display:flex;align-items:center;gap:12px;margin:0 0 14px;font-size:11px;color:var(--cool)}.updateprogress progress{width:100%;height:9px;accent-color:var(--cool)}.updatedetail{overflow-wrap:anywhere}.updatedetail.error{color:var(--danger)}.localstatus{display:block;margin-top:3px;color:var(--muted);font-size:10px}.networkinfo code{font-size:11px}
+html[data-channels="1"] .graphlegend,html[data-channels="1"] .channel.cool,html[data-channels="1"] .cooltext{display:none!important}html[data-channels="1"] .channels{grid-template-columns:1fr}
 </style>
 </head>
 <body>
@@ -78,8 +88,9 @@ const char INDEX_HTML[] PROGMEM = R"AQUAHTML(<!doctype html>
 
 'use strict';
 const $ = id => document.getElementById(id);
-const names = {warm: 'Meleg fehér', cool: 'Hideg fehér'};
-const kelvin = {warm: '2700 K', cool: '6500 K'};
+const single = document.documentElement.dataset.channels === '1';
+const names = single ? {warm: 'Világítás', cool: 'Világítás'} : {warm: 'Meleg fehér', cool: 'Hideg fehér'};
+const kelvin = single ? {warm: '1 csatorna', cool: '1 csatorna'} : {warm: '2700 K', cool: '6500 K'};
 const colors = {warm: '#f3ba72', cool: '#81cdec'};
 const modeNames = {off: 'Kikapcsolva', manual: 'Kézi vezérlés', auto: 'Automata program'};
 const presetCurve = [{minute: 480, level: 0}, {minute: 540, level: 50}, {minute: 1020, level: 50}, {minute: 1080, level: 0}];
@@ -258,7 +269,7 @@ function validCurve(points) {
 }
 
 function validSchedule(schedule) {
-  return schedule && validCurve(schedule.warm) && validCurve(schedule.cool);
+  return schedule && validCurve(schedule.warm) && (single || validCurve(schedule.cool));
 }
 
 function toDraft(points) {
@@ -297,7 +308,7 @@ function render(state) {
     const signature = JSON.stringify(state.schedule);
     if (signature !== savedSignature) {
       savedSignature = signature;
-      draft = {warm: toDraft(state.schedule.warm), cool: toDraft(state.schedule.cool)};
+      draft = {warm: toDraft(state.schedule.warm), cool: toDraft(single ? state.schedule.warm : state.schedule.cool)};
       selected = {warm: null, cool: null};
       renderRows();
     }
@@ -333,7 +344,7 @@ function queueManual() {
   if (!canControlManually()) return;
   manualGuardUntil = Date.now() + 1500;
   for (const channel of ['warm', 'cool']) setSlider(channel, $(channel + 'Slider').value);
-  manualQueued = {warm: $('warmSlider').value, cool: $('coolSlider').value, revision: controlRevision};
+  manualQueued = {warm: $('warmSlider').value, cool: single ? '0' : $('coolSlider').value, revision: controlRevision};
   text('manualStatus', 'Fényerő küldése…');
   clearTimeout(manualTimer);
   manualTimer = setTimeout(sendManual, 200);
@@ -401,10 +412,10 @@ function parseDraftCurve(channel) {
   if (result.some((point, index) => index && point.minute === result[index - 1].minute)) throw new Error(names[channel] + ': ugyanaz az időpont csak egyszer szerepelhet.');
   return result;
 }
-function parseDraft() { return {warm: parseDraftCurve('warm'), cool: parseDraftCurve('cool')}; }
+function parseDraft() { const warm = parseDraftCurve('warm'); return {warm, cool: single ? warm : parseDraftCurve('cool')}; }
 
 function updateEditorMessage() {
-  let message = dirty ? 'Módosított előnézet · a mentésig nem változik a világítás programja.' : 'A két csatorna időpontjai egymástól függetlenek.', error = false;
+  let message = dirty ? 'Módosított előnézet · a mentésig nem változik a világítás programja.' : (single ? 'A fény napi görbéje.' : 'A két csatorna időpontjai egymástól függetlenek.'), error = false;
   try { parseDraft(); }
   catch (problem) { message = problem.message; error = true; }
   text('editMessage', message);
@@ -512,7 +523,7 @@ async function saveProgram() {
     const encode = curve => curve.map(point => point.minute + ',' + point.level).join(';');
     await mutate('/api/program', {warmPoints: encode(points.warm), coolPoints: encode(points.cool)});
     if (revision === draftRevision) { dirty = false; savedSignature = ''; }
-    notify('Mindkét csatorna napi fényprogramja elmentve.');
+    notify(single ? 'A napi fényprogram elmentve.' : 'Mindkét csatorna napi fényprogramja elmentve.');
     await refresh();
   } catch (error) { notify(error.message, true); }
   finally { saving = false; text('saveProgram', 'Program mentése'); updateEditorMessage(); }
@@ -553,7 +564,7 @@ function drawGraph() {
     out += '<line x1="' + x(hour * 60) + '" x2="' + x(hour * 60) + '" y1="' + y(0) + '" y2="' + y(100) + '" stroke="#91a4af" stroke-opacity="' + (hour % 6 === 0 ? '.14' : '.06') + '"/>';
     if (hour % 6 === 0) out += '<text x="' + x(hour * 60) + '" y="' + (height - 8) + '" text-anchor="' + (hour === 0 ? 'start' : hour === 24 ? 'end' : 'middle') + '" fill="#8095a1" font-size="10">' + String(hour).padStart(2, '0') + ':00</text>';
   }
-  for (const channel of [activeCurve === 'warm' ? 'cool' : 'warm', activeCurve]) {
+  for (const channel of single ? ['warm'] : [activeCurve === 'warm' ? 'cool' : 'warm', activeCurve]) {
     const {points, editable} = graphCurve(channel), atZero = interpolate(points, 0);
     const vertices = [{minute: 0, level: atZero}, ...points.filter(point => point.minute > 0), {minute: 1440, level: atZero}];
     const path = vertices.map((point, index) => (index ? 'L' : 'M') + x(point.minute).toFixed(2) + ' ' + y(point.level).toFixed(2)).join(' ');
@@ -736,6 +747,11 @@ window.addEventListener('beforeunload', event => { if (dirty) { event.preventDef
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 if (typeof ResizeObserver !== 'undefined') new ResizeObserver(drawGraph).observe($('chart'));
 else window.addEventListener('resize', drawGraph);
+if (single) {
+  document.querySelector('.channel:not(.cool) .channelname').textContent = 'Fényerő';
+  document.querySelector('.channel:not(.cool) .channelmeta').textContent = 'Egycsatornás kimenet';
+  document.querySelector('.footer').textContent = 'AquaLight · egycsatornás világítás, a te ritmusodban';
+}
 updateControls(); drawGraph(); updateInspector(); poll();
 
 </script>

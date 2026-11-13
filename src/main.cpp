@@ -19,13 +19,31 @@
 #include "maintenance.h"
 #include "web_ui.h"
 
-// Confirmed wiring: warm 2700 K -> GPIO0, cool 6500 K -> GPIO4.
+#ifndef LED_CHANNELS
+#define LED_CHANNELS 2
+#endif
+#if LED_CHANNELS == 2
+// Confirmed wiring: warm 2700 K -> GPIO0, cool 6500 K -> GPIO4, AHT20 SDA 1 / SCL 3.
 constexpr uint8_t PWM_PINS[] = {0, 4};
 constexpr bool PWM_ACTIVE_LOW[] = {false, false};
-constexpr uint32_t PWM_FREQUENCY_HZ = 1000;
-constexpr uint8_t PWM_BITS = 10;
 constexpr int I2C_SDA = 1;
 constexpr int I2C_SCL = 3;
+constexpr int WARM_PIN = 0;
+constexpr int COOL_PIN = 4;
+#elif LED_CHANNELS == 1
+// Single-channel board: one PWM output on GPIO4, AHT20 SDA 1 / SCL 0.
+// The data model keeps two curves; only the first ("warm") curve drives the output.
+constexpr uint8_t PWM_PINS[] = {4};
+constexpr bool PWM_ACTIVE_LOW[] = {false};
+constexpr int I2C_SDA = 1;
+constexpr int I2C_SCL = 0;
+constexpr int WARM_PIN = 4;
+constexpr int COOL_PIN = -1;
+#else
+#error "LED_CHANNELS must be 1 or 2"
+#endif
+constexpr uint32_t PWM_FREQUENCY_HZ = 1000;
+constexpr uint8_t PWM_BITS = 10;
 constexpr char TIMEZONE[] = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 constexpr uint64_t MIN_EPOCH = 1704067200ULL;  // 2024-01-01 UTC.
 constexpr uint64_t MAX_EPOCH = 4102444799ULL;  // 2099-12-31 UTC.
@@ -92,7 +110,7 @@ const char *modeName(aqua::Mode mode) {
 }
 
 void stopPwm() {
-  for (uint8_t i = 0; i < 2; ++i) {
+  for (uint8_t i = 0; i < LED_CHANNELS; ++i) {
     if (pwmAttached[i]) {
       ledc_stop(LEDC_LOW_SPEED_MODE, static_cast<ledc_channel_t>(i), PWM_ACTIVE_LOW[i] ? 1 : 0);
       pwmAttached[i] = false;
@@ -114,7 +132,7 @@ bool startPwm() {
   timer.freq_hz = PWM_FREQUENCY_HZ;
   timer.clk_cfg = LEDC_AUTO_CLK;
   if (ledc_timer_config(&timer) != ESP_OK) return false;
-  for (uint8_t i = 0; i < 2; ++i) {
+  for (uint8_t i = 0; i < LED_CHANNELS; ++i) {
     ledc_channel_config_t channel = {};
     channel.gpio_num = PWM_PINS[i];
     channel.speed_mode = LEDC_LOW_SPEED_MODE;
@@ -142,18 +160,21 @@ void applyOutput() {
   time_t epoch;
   tm local = {};
   const bool valid = readClock(epoch, local);
-  const aqua::Levels desired = aqua::output(settings, valid,
+  aqua::Levels desired = aqua::output(settings, valid,
       local.tm_hour * 3600UL + local.tm_min * 60UL + local.tm_sec);
+#if LED_CHANNELS == 1
+  desired.cool = 0;  // No second output on this board.
+#endif
   const float values[] = {desired.warm, desired.cool};
   const float previous[] = {actual.warm, actual.cool};
-  for (uint8_t i = 0; i < 2; ++i) {
+  for (uint8_t i = 0; i < LED_CHANNELS; ++i) {
     const uint32_t value = aqua::duty(values[i], PWM_ACTIVE_LOW[i]);
     if (value == aqua::duty(previous[i], PWM_ACTIVE_LOW[i])) continue;
     const auto channel = static_cast<ledc_channel_t>(i);
     if (ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, value) != ESP_OK ||
         ledc_update_duty(LEDC_LOW_SPEED_MODE, channel) != ESP_OK) {
       stopPwm();
-      Serial.println("[PWM] WRITE FAILED: both channels held OFF.");
+      Serial.println("[PWM] WRITE FAILED: all outputs held OFF.");
       return;
     }
   }
@@ -453,7 +474,10 @@ void sendState() {
       ? (staRetryDelay - retryElapsed + 999) / 1000 : 0;
   state += ",\"lastDisconnectReason\":"; state += lastStaReason.load();
   state += ",\"lastDisconnectRssi\":"; state += lastStaRssi.load();
-  state += "},\"warmPin\":0,\"coolPin\":4,\"storageOk\":"; state += storageOk ? "true" : "false";
+  state += "},\"channels\":"; state += LED_CHANNELS;
+  state += ",\"warmPin\":"; state += WARM_PIN;
+  state += ",\"coolPin\":"; state += COOL_PIN;
+  state += ",\"storageOk\":"; state += storageOk ? "true" : "false";
   state += ",\"savePending\":"; state += settingsDirty ? "true" : "false";
   state += ",\"uptime\":"; state += String(static_cast<unsigned long long>(uptimeMs / 1000));
   state += ",\"update\":"; state += ledota::stateJson();
@@ -594,8 +618,12 @@ void setup() {
   const uint32_t started = millis();
   while (!Serial && !aqua::due(millis(), started, 1500)) delay(10);
   Serial.println("\nAquaLight ESP32-C3 controller");
+#if LED_CHANNELS == 2
   Serial.println("[PWM] Warm GPIO0 (2700 K), cool GPIO4 (6500 K), 1000 Hz, 10 bit.");
-  if (!pwmOk) Serial.println("[PWM] INIT FAILED; both channels held OFF.");
+#else
+  Serial.println("[PWM] Single channel GPIO4, I2C SDA GPIO1 / SCL GPIO0, 1000 Hz, 10 bit.");
+#endif
+  if (!pwmOk) Serial.println("[PWM] INIT FAILED; all outputs held OFF.");
   loadSettings();
   // Never restore a saved wall-clock timestamp: after a power outage it would be stale.
   timeval unset = {};
