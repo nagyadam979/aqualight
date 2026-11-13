@@ -53,7 +53,7 @@ A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s na
 
 ## Első használat
 
-1. A soros naplóban megjelenik az `AquaLight-…` Wi-Fi neve és az első induláskor generált, eszközönként különböző jelszó. A jelszó újraindításkor megmarad.
+1. A soros naplóban megjelenik az `AquaLight-…` Wi-Fi neve és jelszava. A kétcsatornás build első induláskor eszközönként különböző jelszót generál, amely újraindításkor megmarad. Az egycsatornás build a `platformio.ini` fájlban megadott `LED_AP_PASSWORD` rögzített értékét használja; ugyanez védi a helyi OTA-t és a Telnetet.
 2. Csatlakozz ehhez a hálózathoz, és nyisd meg a `http://192.168.4.1/` címet. Az ESP akkor is kiszolgálja az oldalt, ha nincs internet.
 3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a kétcsatornás lap a `http://led-control.local/`, az egycsatornás a `http://led-control-1ch.local/` címen is elérhető. A közös nyitóoldalon a helyi lap paneljében állítsd be a hálózatot. A saját Wi-Fi tartalék hozzáférésként megmarad.
 4. Állítsd be az órát a telefon/böngésző idejéről, vagy internetkapcsolat mellett várd meg az NTP-szinkront. Az óra magyar téli–nyári időszámítást használ.
@@ -93,24 +93,40 @@ A `node test_ui.cjs` a tényleges beágyazott JavaScriptet futtatja egyszerű DO
 
 Az alkalmazás verziója a `LED_CONTROL_VERSION` fordítási makró; az alapkiadás **1.1.0**. Az `update` és `maintenance` állapotmezők jelszó nélkül jelzik a frissítés állapotát. A `min_spiffs.csv` partíciós tábla két `0x1e0000` méretű alkalmazáshelyet használ; az NVS címe/mérete (`0x9000`, `0x5000`) és az `otadata` (`0xe000`, `0x2000`) megmarad. A partíciós tábla egyszeri telepítése USB-n történik, az NVS törlése nélkül. Ezután az OTA csak az inaktív alkalmazáshelyet írja.
 
-A webes frissítés gomb külön, nyilvános Firebase-kiadási csatornán keres új firmware-t. A kiadás aláírt manifesztből és alkalmazásképből áll; a nyilvános firmware nem tartalmaz Wi-Fi- vagy eszközjelszót. A kiadási cél a BeeScale által is használt `terrarium1` Firebase-projekt külön `led-control-terrarium1` Hosting-oldala; a csatorna címe `https://led-control-terrarium1.web.app/channels/stable.json`. A meglévő BeeScale-oldal és a CafePlant projekt változatlan. A vezérlő indulás után 60 másodperccel, majd sikeres ellenőrzések után 30 percenként keres kiadást; a webes gombbal korábban is indítható keresés. A hálózati letöltés külön munkaszálon fut. A beállításmentés befejezése előtt nincs szándékos újraindítás; az új felhős kép indulási állapotát a vezérlő ellenőrzi.
+A webes frissítés gomb külön, nyilvános Firebase-kiadási csatornán keres új firmware-t. A kiadás aláírt manifesztből és alkalmazásképből áll; az otthoni Wi-Fi adatai az eszközön maradnak, de az egycsatornás build rögzített `LED_AP_PASSWORD` értéke a nyilvános firmware része. A kiadási cél a BeeScale által is használt `terrarium1` Firebase-projekt külön `led-control-terrarium1` Hosting-oldala. A kétcsatornás csatorna címe `https://led-control-terrarium1.web.app/channels/stable.json`, az egycsatornásé `https://led-control-terrarium1.web.app/channels/stable-1ch.json`. A meglévő BeeScale-oldal és a CafePlant projekt változatlan. A vezérlő indulás után 60 másodperccel, majd sikeres ellenőrzések után 30 percenként keres kiadást; a webes gombbal korábban is indítható keresés. A hálózati letöltés külön munkaszálon fut. A beállításmentés befejezése előtt nincs szándékos újraindítás; az új felhős kép indulási állapotát a vezérlő ellenőrzi.
+
+A választófüles közös felület ellenőrzött felhős kiadásai (2026. november 13., firmware-forrás: `558aab6`):
+
+| Lap | Kiadási azonosító | Csatornafájl |
+| --- | --- | --- |
+| Kétcsatornás | `led-control-1.1.0-tabs-558aab6` | `stable.json` |
+| Egycsatornás | `1ch-1.1.0-tabs-558aab6` | `stable-1ch.json` |
+
+Mindkét lap a felhőből telepítette a saját kiadását, újraindult, majd az `/api/state` válaszában a megfelelő `update.release_id` mellett `up_to_date` állapotot jelzett. A PWM, a szenzor, a tároló és az óra állapotjelzői rendben voltak; a mentett programok és kézi fényerők megmaradtak. A közös oldalon mindkét lap élő felülete betöltődött a saját fülén, és a felhasználó is visszaigazolta a működést. Ez az OTA-telepítést és a webes integrációt igazolja, a PWM-jel elektromos mérését nem helyettesíti.
+
+A kijelzett alkalmazásverzió mindkét kiadásban `1.1.0`; az OTA a futó kép hashét hasonlítja össze a manifeszttel, ezért azonos verziószám mellett is telepíti az eltérő képet. A konkrét kiadást az `update.release_id` azonosítja a következő sikeres felhős ellenőrzés után.
 
 A privát aláírókulcs a repositoryn kívül, a `~/.config/led-control/ota-signing-key.pem` fájlban marad, `0600` jogosultsággal. A firmware-be és Gitbe csak a `src/ota_public_key.h` nyilvános ellenőrzőkulcsa kerül. A kiadóeszköz OpenSSL 3.2 vagy újabb verziót használ; alapértelmezése dry run, fájlírás és publikálás nélkül.
 
 ```sh
 python3 release_firmware.py --firmware .pio/build/aqualight/firmware.bin \
-  --release-id 1.1.0 --version 1.1.0
+  --release-id led-control-1.1.0-tabs-558aab6 --version 1.1.0
+python3 release_firmware.py --board 1ch --firmware .pio/build/aqualight1ch/firmware.bin \
+  --release-id 1ch-1.1.0-tabs-558aab6 --version 1.1.0
 python3 release_firmware.py --firmware .pio/build/aqualight/firmware.bin \
-  --release-id 1.1.0 --version 1.1.0 --prepare \
+  --release-id led-control-1.1.0-tabs-558aab6 --version 1.1.0 --prepare \
+  --output "$HOME/.local/share/led-control/hosting"
+python3 release_firmware.py --board 1ch --firmware .pio/build/aqualight1ch/firmware.bin \
+  --release-id 1ch-1.1.0-tabs-558aab6 --version 1.1.0 --prepare \
   --output "$HOME/.local/share/led-control/hosting"
 firebase deploy --project terrarium1 \
   --config "$HOME/.local/share/led-control/hosting/firebase.json" \
   --only hosting --non-interactive
 ```
 
-A `--prepare` csak a külön, repositoryn kívüli Hosting-kimenetet készíti elő. Kizárólag az utolsó, külön kiadott Firebase-parancs publikál; annak konfigurációja a dedikált `led-control-terrarium1` site-ot nevezi meg. Korábbi kiadások megmaradnak, azonos kiadásazonosító eltérő képpel nem írható felül.
+A `--prepare` csak a külön, repositoryn kívüli Hosting-kimenetet készíti elő. Mindkét lap kiadását ugyanabba a Hosting-kimenetbe készítsd elő, majd egyetlen deployjal publikáld a két csatornát. Kizárólag az utolsó, külön kiadott Firebase-parancs publikál; annak konfigurációja a dedikált `led-control-terrarium1` site-ot nevezi meg. Korábbi kiadások megmaradnak, azonos kiadásazonosító eltérő képpel nem írható felül; új firmware-hez új kiadási azonosítót használj. Már OTA-képes lapnál ehhez nem kell USB: a saját vezérlőpanel **Frissítés és diagnosztika → Frissítés keresése** gombja elindítja a letöltést és a telepítést. Újraindulás után töltsd újra a böngészőoldalt is az új felület betöltéséhez.
 
-Helyi, hitelesített **ArduinoOTA** a kétcsatornás lapon `led-control.local:3232`, az egycsatornáson `led-control-1ch.local:3232` címen is elérhető. Jelszava az eszköz meglévő, egyedi AP-jelszava, amely a soros indulási naplóban látható; nem kerül API-válaszba vagy Telnet-naplóba. Csak alkalmazásképet tölts fel (`firmware.bin`), ne teljes flashképet vagy fájlrendszerképet. Az Arduino **3.3.8** csomaghoz tartozó `tools/espota.py` feltöltőt használd: ez támogatja a PBKDF2-HMAC-SHA256 hitelesítést, a régebbi feltöltők nem feltétlenül kompatibilisek.
+Helyi, hitelesített **ArduinoOTA** a kétcsatornás lapon `led-control.local:3232`, az egycsatornáson `led-control-1ch.local:3232` címen is elérhető. Jelszava az eszköz saját AP-jelszava, amely a soros indulási naplóban látható; nem kerül API-válaszba vagy Telnet-naplóba. Csak alkalmazásképet tölts fel (`firmware.bin`), ne teljes flashképet vagy fájlrendszerképet. Az Arduino **3.3.8** csomaghoz tartozó `tools/espota.py` feltöltőt használd: ez támogatja a PBKDF2-HMAC-SHA256 hitelesítést, a régebbi feltöltők nem feltétlenül kompatibilisek.
 
 Példa a már elkészített alkalmazáskép feltöltésére; a jelszót interaktívan olvasd be, ne mentsd a projektbe:
 
@@ -126,7 +142,7 @@ A helyi és felhős OTA közös zárral védi a flashírást. Helyi feltöltés 
 
 ## Telnet diagnosztika
 
-A `telnet led-control.local 23` (egycsatornás lapon `telnet led-control-1ch.local 23`) egyetlen klienssel használható, ugyanazzal az egyedi AP-jelszóval. A belépés 10 másodperc után lejár, legfeljebb három hibás próbálkozás engedélyezett; ezután 30 másodperces szünet következik. Az inaktív munkamenet 5 perc után bezárul. A Telnet titkosítatlan helyi protokoll, ezért megbízható LAN-on/AP-n használd; nem általános parancsértelmező és nem tükrözi a soros naplót.
+A `telnet led-control.local 23` (egycsatornás lapon `telnet led-control-1ch.local 23`) egyetlen klienssel használható, az adott lap saját AP-jelszavával. A belépés 10 másodperc után lejár, legfeljebb három hibás próbálkozás engedélyezett; ezután 30 másodperces szünet következik. Az inaktív munkamenet 5 perc után bezárul. A Telnet titkosítatlan helyi protokoll, ezért megbízható LAN-on/AP-n használd; nem általános parancsértelmező és nem tükrözi a soros naplót.
 
 | Parancs | Művelet |
 | --- | --- |
