@@ -158,6 +158,7 @@ int main() {
 '''
 
 NETWORK_STUBS = r'''
+#define LED_HOSTNAME "led-control"
 #include <cassert>
 #include <cstdio>
 #include <cstdint>

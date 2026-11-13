@@ -285,7 +285,7 @@ void scheduleStaRetry(uint32_t now) {
 
 void startNetwork() {
   WiFi.persistent(false);
-  WiFi.setHostname("led-control");
+  WiFi.setHostname(LED_HOSTNAME);
   WiFi.setAutoReconnect(false);  // Native reconnect events have no backoff and can starve the shared AP radio.
   WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) {
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
@@ -320,7 +320,7 @@ void startNetwork() {
   Serial.printf("[NET] AP URL: http://%s/ (%s)\n", WiFi.softAPIP().toString().c_str(), apActive ? "ready" : "FAILED");
   applyWifiPower();
   if (wifi.ssid[0]) startStaAttempt(millis());
-  if (MDNS.begin("led-control")) MDNS.addService("http", "tcp", 80);
+  if (MDNS.begin(LED_HOSTNAME)) MDNS.addService("http", "tcp", 80);
 }
 
 void updateNetwork(uint32_t now) {
@@ -342,8 +342,8 @@ void updateNetwork(uint32_t now) {
     staAttemptActive = false;
     staNextRetryDelay = STA_RETRY_MIN_MS;
     if (!wasConnected) {
-      Serial.printf("[NET] STA URL: http://%s/ (http://led-control.local/) channel=%u rssi=%d dBm.\n",
-                    WiFi.localIP().toString().c_str(), WiFi.channel(), WiFi.RSSI());
+      Serial.printf("[NET] STA URL: http://%s/ (http://%s.local/) channel=%u rssi=%d dBm.\n",
+                    WiFi.localIP().toString().c_str(), LED_HOSTNAME, WiFi.channel(), WiFi.RSSI());
     }
   } else if (!wifiPending && wifi.ssid[0]) {
     if (wasConnected || (staAttemptActive && aqua::due(now, staAttemptStarted, STA_ATTEMPT_MS))) {
@@ -518,6 +518,11 @@ void configureRoutes() {
   const char *headers[] = {"X-Aqua-Request", "Content-Type", "Content-Length"};
   server.collectHeaders(headers, 3);
   server.on("/", HTTP_GET, [] {
+    server.sendHeader("Cache-Control", "no-store");
+    server.sendHeader("X-Content-Type-Options", "nosniff");
+    server.send_P(200, "text/html; charset=utf-8", HUB_HTML);
+  });
+  server.on("/control", HTTP_GET, [] {
     server.sendHeader("Cache-Control", "no-store");
     server.sendHeader("X-Content-Type-Options", "nosniff");
     server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);

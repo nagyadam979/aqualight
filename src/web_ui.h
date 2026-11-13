@@ -1,6 +1,10 @@
 #pragma once
 #include <Arduino.h>
 
+#ifndef LED_HOSTNAME
+#define LED_HOSTNAME "led-control"
+#endif
+
 #ifndef LED_CHANNELS
 #define LED_CHANNELS 2
 #endif
@@ -79,7 +83,7 @@ html[data-channels="1"] .graphlegend,html[data-channels="1"] .channel.cool,html[
   </div></details>
   <details id="diagnostics" class="settings"><summary>Frissítés és diagnosztika<svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="m5 8 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="settingsbody">
     <section class="settingsection"><h3>Firmware-frissítés</h3><dl class="networkinfo"><dt>Futó verzió</dt><dd id="firmwareVersion">—</dd><dt id="availableVersionLabel" hidden>Elérhető verzió</dt><dd id="availableVersion" hidden>—</dd><dt>Állapot</dt><dd id="updateStatus" aria-live="polite">Frissítési adatok betöltése…</dd><dt>Utolsó ellenőrzés</dt><dd id="lastUpdateCheck">—</dd></dl><div id="updateProgressRow" class="updateprogress" hidden><progress id="updateProgress" max="100" value="0" aria-label="Firmware letöltésének állása"></progress><span id="updatePercent">0%</span></div><p id="updateDetail" class="updatedetail" aria-live="polite" hidden></p><button type="button" class="btn" id="checkUpdate" disabled>Frissítés keresése</button></section>
-    <section class="settingsection"><h3>Helyi elérés</h3><dl class="networkinfo"><dt>LAN OTA</dt><dd><code>led-control.local:3232</code><span id="localOtaStatus" class="localstatus">Állapot nem közölt</span></dd><dt>Telnet</dt><dd><code>led-control.local:23</code><span id="telnetStatus" class="localstatus">Állapot nem közölt</span></dd></dl><p>Mindkét helyi szolgáltatás jelszava a vezérlő saját Wi-Fi-hálózatának jelszava.</p></section>
+    <section class="settingsection"><h3>Helyi elérés</h3><dl class="networkinfo"><dt>LAN OTA</dt><dd><code>)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:3232</code><span id="localOtaStatus" class="localstatus">Állapot nem közölt</span></dd><dt>Telnet</dt><dd><code>)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:23</code><span id="telnetStatus" class="localstatus">Állapot nem közölt</span></dd></dl><p>Mindkét helyi szolgáltatás jelszava a vezérlő saját Wi-Fi-hálózatának jelszava.</p></section>
   </div></details>
   <footer class="footer">AquaLight · meleg és hideg fehér fény, a te ritmusodban</footer>
 </main>
@@ -315,7 +319,7 @@ function render(state) {
   }
   const network = state.network || {};
   text('wifiStatus', network.connected ? (network.ssid || 'Csatlakoztatva') : (network.ssid ? 'Csatlakozás: ' + network.ssid : 'Nincs beállítva'));
-  text('wifiAddress', network.connected && network.ip ? network.ip + ' · led-control.local' : 'Csatlakozz a saját hálózathoz');
+  text('wifiAddress', network.connected && network.ip ? network.ip + ' · ' + (single ? 'led-control-1ch.local' : 'led-control.local') : 'Csatlakozz a saját hálózathoz');
   text('apName', network.apActive ? (network.apSsid || 'Elérhető') : 'Nem aktív');
   text('apAddress', network.apIp || '192.168.4.1');
   text('timeInfo', !state.clockValid ? 'Az óra még nincs beállítva. Internetes kapcsolat vagy az alábbi gomb segítségével szinkronizálhatod.' : state.timeSource === 'ntp' ? 'Az idő interneten szinkronizálva. Magyar téli–nyári időszámítás.' : 'Az idő erről az eszközről beállítva. Magyar téli–nyári időszámítás.');
@@ -757,3 +761,37 @@ updateControls(); drawGraph(); updateInspector(); poll();
 </script>
 </body>
 </html>)AQUAHTML";
+
+
+const char HUB_HTML[] PROGMEM = R"AQUAHUB(<!doctype html>
+<html lang="hu" data-channels=")AQUAHUB" LED_UI_CHANNELS R"AQUAHUB(">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1116">
+<title>AquaLight · Mindkét vezérlő</title>
+<style>
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b1116;color:#eff5f7}
+*{box-sizing:border-box}body{margin:0;min-width:300px}header{max-width:1920px;margin:auto;padding:20px 16px}h1{font-size:24px;margin:0 0 10px}h2{font-size:18px;margin:0}p{font-size:13px;line-height:1.5;color:#91a4af;margin:8px 0 0}a{color:#81cdec}a:focus-visible{outline:2px solid #81cdec;outline-offset:3px}main{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;max-width:1920px;margin:auto;padding:0 16px 24px}.device{min-width:0;border:1px solid #293740;border-radius:16px;overflow:hidden}.devicehead{padding:16px;background:#141e25}.devicehead a{display:inline-block;min-height:44px;padding-top:10px;font-size:13px}iframe{display:block;width:100%;height:1100px;border:0;background:#0b1116}@media(min-width:1100px){main{grid-template-columns:repeat(2,minmax(0,1fr))}iframe{height:calc(100vh - 220px);min-height:900px}}
+</style>
+</head>
+<body>
+<header><h1>AquaLight · Mindkét vezérlő</h1><p>A két lap teljes vezérlése egyszerre látható. Mindkettőt csatlakoztasd ugyanahhoz az otthoni Wi-Fihez. Ha valamelyik panel nem töltődik be, ellenőrizd az adott lap kapcsolatát, vagy nyisd meg a panel saját hivatkozását.</p><noscript><p>A panelek betöltéséhez engedélyezd a JavaScriptet. <a href="/control">Az ezen a lapon futó vezérlés megnyitása</a>.</p></noscript></header>
+<main aria-label="Mindkét AquaLight lap vezérlése">
+<section class="device" aria-labelledby="titleTwo"><div class="devicehead"><h2 id="titleTwo">Kétcsatornás lap</h2><p>Meleg és hideg fehér · két független fényerőcsatorna</p><a id="directTwo" target="_blank" rel="noopener">Kétcsatornás vezérlés külön megnyitása</a></div><iframe id="frameTwo" title="Kétcsatornás AquaLight lap teljes vezérlése"></iframe></section>
+<section class="device" aria-labelledby="titleOne"><div class="devicehead"><h2 id="titleOne">Egycsatornás lap</h2><p>Egy fényerőcsatorna · önálló program és szenzor</p><a id="directOne" target="_blank" rel="noopener">Egycsatornás vezérlés külön megnyitása</a></div><iframe id="frameOne" title="Egycsatornás AquaLight lap teljes vezérlése"></iframe></section>
+</main>
+<script>
+'use strict';
+const localSingle = document.documentElement.dataset.channels === '1';
+const devices = [
+  {frame: 'frameTwo', link: 'directTwo', url: localSingle ? 'http://led-control.local/control' : '/control'},
+  {frame: 'frameOne', link: 'directOne', url: localSingle ? '/control' : 'http://led-control-1ch.local/control'}
+];
+devices.forEach(device => {
+  document.getElementById(device.frame).src = device.url;
+  document.getElementById(device.link).href = device.url;
+});
+</script>
+</body>
+</html>)AQUAHUB";

@@ -152,10 +152,10 @@ void begin(const String &password, SaveCallback save, StatusCallback status) {
   telnet.setNoDelay(true);
   telnetReady = static_cast<bool>(telnet);
   if (esp_ota_get_next_update_partition(nullptr)) {
-    ArduinoOTA.setHostname("led-control");
+    ArduinoOTA.setHostname(WiFi.getHostname());
     ArduinoOTA.setPort(3232);
     ArduinoOTA.setPassword(password.c_str());
-    ArduinoOTA.setMdnsEnabled(false);  // Main already owns the led-control mDNS responder.
+    ArduinoOTA.setMdnsEnabled(false);  // Main already owns the device mDNS responder.
     ArduinoOTA.setRebootOnSuccess(false);
     ArduinoOTA.setTimeout(1000);
     ArduinoOTA.onStart([] {

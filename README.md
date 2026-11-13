@@ -27,9 +27,15 @@ pio run -e aqualight1ch -t upload
 UI_CHANNELS=1 node test_ui.cjs
 ```
 
-A felület egyetlen görbét és egyetlen kézi csúszkát mutat; az API ugyanaz marad (a `cool` mező ezen a lapon mindig 0, a `coolPoints` a `warmPoints` másolata). Webcíme csatlakozás után ugyanaz, `http://led-control.local/`; ha mindkét lap egyszerre van a hálózaton, az azonos mDNS-név ütközhet, ilyenkor az IP-címet használd.
+Az egycsatornás lap vezérlőfelülete egyetlen görbét és egyetlen kézi csúszkát mutat; az API ugyanaz marad (a `cool` mező ezen a lapon mindig 0, a `coolPoints` a `warmPoints` másolata). Saját webcíme `http://led-control-1ch.local/`, a kétcsatornásé `http://led-control.local/`. A Wi-Fi-, mDNS- és ArduinoOTA-eszköznév is ezt a szétválasztást követi.
 
 Az OTA külön csatornát használ: a manifeszt célja `led-control-esp32c3-1ch`, a csatornafájl `channels/stable-1ch.json`, és a kiadási azonosító `1ch-` előtagú. Így a két lap firmware-e nem cserélhető fel. Kiadás: `python3 release_firmware.py --board 1ch --firmware .pio/build/aqualight1ch/firmware.bin --release-id 1ch-1.1.0 --version 1.1.0`.
+
+## Közös vezérlőoldal
+
+Bármelyik lap webcímét megnyitva ugyanaz a közös nyitóoldal jelenik meg, rajta **egyszerre mindkét lap teljes vezérlésével**. Nagy képernyőn egymás mellett, mobilon egymás alatt látható a **Kétcsatornás lap** és az **Egycsatornás lap** panelje. Mindkét panel saját programot, csúszkákat, szenzoradatokat és beállításokat kezel; a parancsok közvetlenül az adott laphoz jutnak. A két panel egymástól függetlenül őrzi a még nem mentett görbeszerkesztést; a teljes böngészőoldal újratöltése ezt nem őrzi meg. A panelek tartalma szükség esetén külön görgethető.
+
+A közös eléréshez **mindkét lapra ezt a firmware-változatot kell feltölteni**, mindkettőt ugyanarra az otthoni Wi-Fi-hálózatra kell csatlakoztatni, és a böngészőnek fel kell tudnia oldani a `.local` neveket. Egy egycsatornás és egy kétcsatornás lapot támogat; több azonos típusú laphoz külön címzés szükséges. A nyitóoldal IP-címmel vagy a saját AP `192.168.4.1` címén is működik a helyi lappal, de a másik lap csak akkor nyitható meg, ha a böngészőt futtató eszköz arról a hálózatról eléri. Kikapcsolt vagy nem elérhető másik lap nem akadályozza a helyi vezérlést. A panelek saját **külön megnyitása** hivatkozása az adott vezérlést önálló oldalon nyitja meg; közvetlenül a `/control` útvonalon is elérhető.
 
 ## Fordítás és feltöltés
 
@@ -49,7 +55,7 @@ A PlatformIO platform és az AHTxx-könyvtár verziója rögzített. Az USB-s na
 
 1. A soros naplóban megjelenik az `AquaLight-…` Wi-Fi neve és az első induláskor generált, eszközönként különböző jelszó. A jelszó újraindításkor megmarad.
 2. Csatlakozz ehhez a hálózathoz, és nyisd meg a `http://192.168.4.1/` címet. Az ESP akkor is kiszolgálja az oldalt, ha nincs internet.
-3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a `http://led-control.local/` címen is elérhető. A saját Wi-Fi tartalék hozzáférésként megmarad.
+3. A hálózati beállításoknál opcionálisan add meg az otthoni Wi-Fi adatait. Csatlakozás után a naplóban jelzett IP-címen, illetve mDNS-t támogató eszközön a kétcsatornás lap a `http://led-control.local/`, az egycsatornás a `http://led-control-1ch.local/` címen is elérhető. A közös nyitóoldalon a helyi lap paneljében állítsd be a hálózatot. A saját Wi-Fi tartalék hozzáférésként megmarad.
 4. Állítsd be az órát a telefon/böngésző idejéről, vagy internetkapcsolat mellett várd meg az NTP-szinkront. Az óra magyar téli–nyári időszámítást használ.
 5. A napi grafikonon válaszd ki a meleg vagy hideg csatornát. A pontok húzásával módosíthatod az időt és a fényerőt, dupla koppintással új pontot adhatsz hozzá. A változások csak a Mentés után kerülnek a lámpára; ezután válts automata módra. A kézi vezérlés külön lenyitható részben érhető el; külön gombbal kapcsolható be, kikapcsolása automata módra tér vissza. A csúszkák csak bekapcsolt kézi módban állíthatók.
 
@@ -104,7 +110,7 @@ firebase deploy --project terrarium1 \
 
 A `--prepare` csak a külön, repositoryn kívüli Hosting-kimenetet készíti elő. Kizárólag az utolsó, külön kiadott Firebase-parancs publikál; annak konfigurációja a dedikált `led-control-terrarium1` site-ot nevezi meg. Korábbi kiadások megmaradnak, azonos kiadásazonosító eltérő képpel nem írható felül.
 
-Helyi, hitelesített **ArduinoOTA** a `led-control.local:3232` címen is elérhető. Jelszava az eszköz meglévő, egyedi AP-jelszava, amely a soros indulási naplóban látható; nem kerül API-válaszba vagy Telnet-naplóba. Csak alkalmazásképet tölts fel (`firmware.bin`), ne teljes flashképet vagy fájlrendszerképet. Az Arduino **3.3.8** csomaghoz tartozó `tools/espota.py` feltöltőt használd: ez támogatja a PBKDF2-HMAC-SHA256 hitelesítést, a régebbi feltöltők nem feltétlenül kompatibilisek.
+Helyi, hitelesített **ArduinoOTA** a kétcsatornás lapon `led-control.local:3232`, az egycsatornáson `led-control-1ch.local:3232` címen is elérhető. Jelszava az eszköz meglévő, egyedi AP-jelszava, amely a soros indulási naplóban látható; nem kerül API-válaszba vagy Telnet-naplóba. Csak alkalmazásképet tölts fel (`firmware.bin`), ne teljes flashképet vagy fájlrendszerképet. Az Arduino **3.3.8** csomaghoz tartozó `tools/espota.py` feltöltőt használd: ez támogatja a PBKDF2-HMAC-SHA256 hitelesítést, a régebbi feltöltők nem feltétlenül kompatibilisek.
 
 Példa a már elkészített alkalmazáskép feltöltésére; a jelszót interaktívan olvasd be, ne mentsd a projektbe:
 
@@ -120,7 +126,7 @@ A helyi és felhős OTA közös zárral védi a flashírást. Helyi feltöltés 
 
 ## Telnet diagnosztika
 
-A `telnet led-control.local 23` egyetlen klienssel használható, ugyanazzal az egyedi AP-jelszóval. A belépés 10 másodperc után lejár, legfeljebb három hibás próbálkozás engedélyezett; ezután 30 másodperces szünet következik. Az inaktív munkamenet 5 perc után bezárul. A Telnet titkosítatlan helyi protokoll, ezért megbízható LAN-on/AP-n használd; nem általános parancsértelmező és nem tükrözi a soros naplót.
+A `telnet led-control.local 23` (egycsatornás lapon `telnet led-control-1ch.local 23`) egyetlen klienssel használható, ugyanazzal az egyedi AP-jelszóval. A belépés 10 másodperc után lejár, legfeljebb három hibás próbálkozás engedélyezett; ezután 30 másodperces szünet következik. Az inaktív munkamenet 5 perc után bezárul. A Telnet titkosítatlan helyi protokoll, ezért megbízható LAN-on/AP-n használd; nem általános parancsértelmező és nem tükrözi a soros naplót.
 
 | Parancs | Művelet |
 | --- | --- |
