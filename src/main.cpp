@@ -296,12 +296,19 @@ void startNetwork() {
     }
   });
   WiFi.mode(WIFI_AP_STA);  // Enable RF entropy before creating the first AP password.
+#ifdef LED_AP_PASSWORD
+  // Fixed, build-time AP/Telnet/OTA password (WPA2 needs 8-63 characters).
+  static_assert(sizeof(LED_AP_PASSWORD) - 1 >= 8 && sizeof(LED_AP_PASSWORD) - 1 <= 63,
+                "LED_AP_PASSWORD must be 8-63 characters");
+  apPassword = LED_AP_PASSWORD;
+#else
   if (apPassword.length() != 12) {
     constexpr char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
     apPassword = "";
     for (uint8_t i = 0; i < 12; ++i) apPassword += alphabet[esp_random() % (sizeof(alphabet) - 1)];
     if (!preferencesOpen || preferences.putString("ap_pass", apPassword) != apPassword.length()) storageOk = false;
   }
+#endif
   const uint64_t mac = ESP.getEfuseMac();
   char suffix[7];
   snprintf(suffix, sizeof(suffix), "%02X%02X%02X", static_cast<unsigned>((mac >> 24) & 0xff),
