@@ -12,21 +12,53 @@ const script = header.match(/<script>([\s\S]*?)<\/script>/)[1];
 const hub = header.slice(header.indexOf('const char HUB_HTML'));
 const hubScript = hub.match(/<script>([\s\S]*?)<\/script>/)[1];
 assert.equal((hub.match(/<iframe\b/g) || []).length, 2);
-assert.doesNotMatch(hub, /<iframe[^>]*\bhidden\b|\.hidden\s*=|selectDevice|<button/);
-assert.match(hub, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+assert.match(hub, /role="tablist"/);
+for (const suffix of ['Two', 'One']) {
+  assert.match(hub, new RegExp('id="tab' + suffix + '"[^>]*role="tab"[^>]*aria-controls="panel' + suffix + '"'));
+  assert.match(hub, new RegExp('id="panel' + suffix + '"[^>]*role="tabpanel"[^>]*aria-labelledby="tab' + suffix + '"'));
+}
 for (const hostChannels of ['1', '2']) {
-  const nodes = new Map(['frameTwo', 'frameOne', 'directTwo', 'directOne'].map(id => [id, {}]));
+  let focused = null;
+  const nodes = new Map();
+  for (const id of ['frameTwo', 'frameOne', 'directTwo', 'directOne', 'tabTwo', 'tabOne', 'panelTwo', 'panelOne']) {
+    nodes.set(id, {attrs: {}, loads: 0, listeners: {},
+      setAttribute(name, value) { this.attrs[name] = value; if (name === 'src') this.loads++; },
+      getAttribute(name) { return this.attrs[name]; },
+      addEventListener(name, callback) { this.listeners[name] = callback; },
+      focus() { focused = id; }
+    });
+  }
   const sandbox = vm.createContext({document: {
     documentElement: {dataset: {channels: hostChannels}}, getElementById: id => nodes.get(id)
-  }, fetch() { throw new Error('Loading the hub must not send controller API requests'); }});
+  }, fetch() { throw new Error('Switching tabs must not send controller API requests'); }});
   vm.runInContext(hubScript, sandbox);
-  const local = nodes.get(hostChannels === '1' ? 'frameOne' : 'frameTwo');
-  const remote = nodes.get(hostChannels === '1' ? 'frameTwo' : 'frameOne');
-  assert.equal(local.src, '/control'); // Relative even when hub opened by IP or AP.
-  assert.equal(remote.src, hostChannels === '1' ? 'http://led-control.local/control' : 'http://led-control-1ch.local/control');
-  assert.equal(nodes.get('directTwo').href, nodes.get('frameTwo').src);
-  assert.equal(nodes.get('directOne').href, nodes.get('frameOne').src);
-  assert.notEqual(local.src, remote.src); // Both independent panels load immediately.
+  const localSuffix = hostChannels === '1' ? 'One' : 'Two', remoteSuffix = hostChannels === '1' ? 'Two' : 'One';
+  const local = nodes.get('frame' + localSuffix), remote = nodes.get('frame' + remoteSuffix);
+  function selected(suffix) {
+    for (const current of ['Two', 'One']) {
+      assert.equal(nodes.get('tab' + current).attrs['aria-selected'], String(current === suffix));
+      assert.equal(nodes.get('tab' + current).tabIndex, current === suffix ? 0 : -1);
+      assert.equal(nodes.get('panel' + current).hidden, current !== suffix);
+    }
+  }
+  assert.equal(local.attrs.src, '/control'); // Relative even when hub opened by IP or AP.
+  assert.equal(remote.loads, 0); selected(localSuffix);
+  nodes.get('tab' + remoteSuffix).listeners.click(); selected(remoteSuffix);
+  assert.equal(remote.attrs.src, hostChannels === '1' ? 'http://led-control.local/control' : 'http://led-control-1ch.local/control');
+  assert.equal(nodes.get('directTwo').href, hostChannels === '1' ? remote.attrs.src : local.attrs.src);
+  assert.equal(nodes.get('directOne').href, hostChannels === '1' ? local.attrs.src : remote.attrs.src);
+  local.unsavedDraft = 'retained';
+  // Even if the peer never loads, the local tab remains usable without a reload.
+  nodes.get('tab' + localSuffix).listeners.click(); selected(localSuffix);
+  nodes.get('tab' + remoteSuffix).listeners.click(); selected(remoteSuffix);
+  assert.equal(local.unsavedDraft, 'retained'); assert.equal(local.loads, 1); assert.equal(remote.loads, 1);
+  for (const [from, key, to] of [['Two','ArrowRight','One'], ['One','ArrowRight','Two'], ['Two','ArrowLeft','One'], ['One','ArrowLeft','Two'], ['One','Home','Two'], ['Two','End','One']]) {
+    let prevented = false;
+    nodes.get('tab' + from).listeners.keydown({key, preventDefault() { prevented = true; }});
+    assert.equal(prevented, true); assert.equal(focused, 'tab' + to); selected(to);
+  }
+  nodes.get('tabOne').listeners.keydown({key: 'Tab', preventDefault() { throw new Error('Leave native Tab behavior intact'); }});
+  assert.equal(local.loads, 1); assert.equal(remote.loads, 1);
 }
 const mainSource = fs.readFileSync(path.join(__dirname, 'src/main.cpp'), 'utf8');
 assert.match(mainSource, /server\.on\("\/", HTTP_GET,[\s\S]*?HUB_HTML/);
@@ -36,7 +68,7 @@ assert.match(mainSource, /MDNS\.begin\(LED_HOSTNAME\)/);
 assert.match(header, /#ifndef LED_HOSTNAME\s+#define LED_HOSTNAME "led-control"/);
 assert.match(fs.readFileSync(path.join(__dirname, 'platformio.ini'), 'utf8'), /-DLED_HOSTNAME=\\"led-control-1ch\\"/);
 assert.match(fs.readFileSync(path.join(__dirname, 'src/maintenance.cpp'), 'utf8'), /ArduinoOTA\.setHostname\(WiFi\.getHostname\(\)\)/);
-console.log('PASS hub: both panels visible and loaded together; both hosting variants; relative local target; separate peer target; no controller API requests; root/control routes and hostname integration');
+console.log('PASS hub: local initial tab; both hosting variants; separate peer target; ARIA and keyboard tabs; offline peer isolation; drafts survive without reload or API writes; root/control routes and hostname integration');
 
 const elements = new Map(), all = [], calls = [], timers = new Map();
 let activeElement = null, nextTimer = 1, heldPath = null, release = null, holdNextGet = false, releaseGet = null, updateRequestError = '';

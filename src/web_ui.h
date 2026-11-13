@@ -772,26 +772,50 @@ const char HUB_HTML[] PROGMEM = R"AQUAHUB(<!doctype html>
 <title>AquaLight · Mindkét vezérlő</title>
 <style>
 :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b1116;color:#eff5f7}
-*{box-sizing:border-box}body{margin:0;min-width:300px}header{max-width:1920px;margin:auto;padding:20px 16px}h1{font-size:24px;margin:0 0 10px}h2{font-size:18px;margin:0}p{font-size:13px;line-height:1.5;color:#91a4af;margin:8px 0 0}a{color:#81cdec}a:focus-visible{outline:2px solid #81cdec;outline-offset:3px}main{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;max-width:1920px;margin:auto;padding:0 16px 24px}.device{min-width:0;border:1px solid #293740;border-radius:16px;overflow:hidden}.devicehead{padding:16px;background:#141e25}.devicehead a{display:inline-block;min-height:44px;padding-top:10px;font-size:13px}iframe{display:block;width:100%;height:1100px;border:0;background:#0b1116}@media(min-width:1100px){main{grid-template-columns:repeat(2,minmax(0,1fr))}iframe{height:calc(100vh - 220px);min-height:900px}}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;min-width:300px}header{max-width:960px;margin:auto;padding:20px 16px}h1{font-size:24px;margin:0 0 10px}h2{font-size:18px;margin:0}p{font-size:13px;line-height:1.5;color:#91a4af;margin:8px 0 0}a{color:#81cdec}a:focus-visible,button:focus-visible{outline:2px solid #81cdec;outline-offset:3px}[role="tablist"]{display:flex;gap:8px;margin-top:16px}button{min-height:44px;font:inherit;cursor:pointer;padding:10px 16px;border:1px solid #293740;border-radius:11px;background:#141e25;color:#91a4af}button[aria-selected="true"]{color:#eff5f7;border-color:#81cdec;background:#1a303b}main{max-width:960px;margin:auto;padding:0 16px 24px}.device{min-width:0;border:1px solid #293740;border-radius:16px;overflow:hidden}.devicehead{padding:16px;background:#141e25}.devicehead a{display:inline-block;min-height:44px;padding-top:10px;font-size:13px}iframe{display:block;width:100%;height:1100px;border:0;background:#0b1116}@media(min-width:700px){iframe{height:calc(100vh - 260px);min-height:900px}}
 </style>
 </head>
 <body>
-<header><h1>AquaLight · Mindkét vezérlő</h1><p>A két lap teljes vezérlése egyszerre látható. Mindkettőt csatlakoztasd ugyanahhoz az otthoni Wi-Fihez. Ha valamelyik panel nem töltődik be, ellenőrizd az adott lap kapcsolatát, vagy nyisd meg a panel saját hivatkozását.</p><noscript><p>A panelek betöltéséhez engedélyezd a JavaScriptet. <a href="/control">Az ezen a lapon futó vezérlés megnyitása</a>.</p></noscript></header>
+<header><h1>AquaLight · Mindkét vezérlő</h1><p>A fülekkel választhatsz a két lap vezérlése között; a még nem mentett szerkesztések váltáskor megmaradnak. Mindkét lapot csatlakoztasd ugyanahhoz az otthoni Wi-Fihez. Ha valamelyik panel nem töltődik be, ellenőrizd a lap kapcsolatát, vagy nyisd meg a saját hivatkozását.</p><div role="tablist" aria-label="Vezérlő kiválasztása"><button id="tabTwo" type="button" role="tab" aria-controls="panelTwo" aria-selected="false" tabindex="-1">Kétcsatornás lap</button><button id="tabOne" type="button" role="tab" aria-controls="panelOne" aria-selected="false" tabindex="-1">Egycsatornás lap</button></div><noscript><p>A panelek betöltéséhez engedélyezd a JavaScriptet. <a href="/control">Az ezen a lapon futó vezérlés megnyitása</a>.</p></noscript></header>
 <main aria-label="Mindkét AquaLight lap vezérlése">
-<section class="device" aria-labelledby="titleTwo"><div class="devicehead"><h2 id="titleTwo">Kétcsatornás lap</h2><p>Meleg és hideg fehér · két független fényerőcsatorna</p><a id="directTwo" target="_blank" rel="noopener">Kétcsatornás vezérlés külön megnyitása</a></div><iframe id="frameTwo" title="Kétcsatornás AquaLight lap teljes vezérlése"></iframe></section>
-<section class="device" aria-labelledby="titleOne"><div class="devicehead"><h2 id="titleOne">Egycsatornás lap</h2><p>Egy fényerőcsatorna · önálló program és szenzor</p><a id="directOne" target="_blank" rel="noopener">Egycsatornás vezérlés külön megnyitása</a></div><iframe id="frameOne" title="Egycsatornás AquaLight lap teljes vezérlése"></iframe></section>
+<section class="device" id="panelTwo" role="tabpanel" aria-labelledby="tabTwo" hidden><div class="devicehead"><h2 id="titleTwo">Kétcsatornás lap</h2><p>Meleg és hideg fehér · két független fényerőcsatorna</p><a id="directTwo" target="_blank" rel="noopener">Kétcsatornás vezérlés külön megnyitása</a></div><iframe id="frameTwo" title="Kétcsatornás AquaLight lap teljes vezérlése"></iframe></section>
+<section class="device" id="panelOne" role="tabpanel" aria-labelledby="tabOne" hidden><div class="devicehead"><h2 id="titleOne">Egycsatornás lap</h2><p>Egy fényerőcsatorna · önálló program és szenzor</p><a id="directOne" target="_blank" rel="noopener">Egycsatornás vezérlés külön megnyitása</a></div><iframe id="frameOne" title="Egycsatornás AquaLight lap teljes vezérlése"></iframe></section>
 </main>
 <script>
 'use strict';
 const localSingle = document.documentElement.dataset.channels === '1';
 const devices = [
-  {frame: 'frameTwo', link: 'directTwo', url: localSingle ? 'http://led-control.local/control' : '/control'},
-  {frame: 'frameOne', link: 'directOne', url: localSingle ? '/control' : 'http://led-control-1ch.local/control'}
+  {tab: 'tabTwo', panel: 'panelTwo', frame: 'frameTwo', link: 'directTwo', url: localSingle ? 'http://led-control.local/control' : '/control'},
+  {tab: 'tabOne', panel: 'panelOne', frame: 'frameOne', link: 'directOne', url: localSingle ? '/control' : 'http://led-control-1ch.local/control'}
 ];
-devices.forEach(device => {
-  document.getElementById(device.frame).src = device.url;
+function selectDevice(index) {
+  devices.forEach((device, current) => {
+    const active = current === index;
+    const tab = document.getElementById(device.tab);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    document.getElementById(device.panel).hidden = !active;
+    const frame = document.getElementById(device.frame);
+    if (active && !frame.getAttribute('src')) frame.setAttribute('src', device.url);
+  });
+}
+devices.forEach((device, index) => {
   document.getElementById(device.link).href = device.url;
+  const tab = document.getElementById(device.tab);
+  tab.addEventListener('click', () => selectDevice(index));
+  tab.addEventListener('keydown', event => {
+    let next;
+    if (event.key === 'ArrowRight') next = (index + 1) % devices.length;
+    else if (event.key === 'ArrowLeft') next = (index + devices.length - 1) % devices.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = devices.length - 1;
+    else return;
+    event.preventDefault();
+    selectDevice(next);
+    document.getElementById(devices[next].tab).focus();
+  });
 });
+selectDevice(localSingle ? 1 : 0);
 </script>
 </body>
 </html>)AQUAHUB";
