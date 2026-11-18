@@ -8,6 +8,9 @@
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include <esp_sntp.h>
+#include <esp_attr.h>
+#include <esp_system.h>
+#include <soc/soc_caps.h>
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -15,6 +18,7 @@
 #include <sys/time.h>
 
 #include "schedule.h"
+#include "wifi_recovery.h"
 #include "cloud_update.h"
 #include "maintenance.h"
 #include "web_ui.h"
@@ -23,9 +27,11 @@
 #define LED_CHANNELS 2
 #endif
 #if LED_CHANNELS == 2
-// Confirmed wiring: warm 2700 K -> GPIO0, cool 6500 K -> GPIO4, AHT20 SDA 1 / SCL 3.
+// Confirmed wiring: full-spectrum purple (blue + red) -> GPIO0, cool 6500 K -> GPIO4, AHT20 SDA 1 / SCL 3.
 constexpr uint8_t PWM_PINS[] = {0, 4};
 constexpr bool PWM_ACTIVE_LOW[] = {false, false};
+constexpr uint32_t PWM_MIN_DUTY[] = {aqua::PWM_AT_FIVE_WARM, aqua::PWM_AT_FIVE_COOL};
+constexpr uint32_t PWM_START_DUTY[] = {aqua::PWM_START_WARM, aqua::PWM_START_COOL};
 constexpr int I2C_SDA = 1;
 constexpr int I2C_SCL = 3;
 constexpr int WARM_PIN = 0;
@@ -35,6 +41,7 @@ constexpr int COOL_PIN = 4;
 // The data model keeps two curves; only the first ("warm") curve drives the output.
 constexpr uint8_t PWM_PINS[] = {4};
 constexpr bool PWM_ACTIVE_LOW[] = {false};
+constexpr uint32_t PWM_MIN_DUTY[] = {aqua::PWM_MIN_SINGLE};
 constexpr int I2C_SDA = 1;
 constexpr int I2C_SCL = 0;
 constexpr int WARM_PIN = 4;
@@ -42,14 +49,26 @@ constexpr int COOL_PIN = -1;
 #else
 #error "LED_CHANNELS must be 1 or 2"
 #endif
-constexpr uint32_t PWM_FREQUENCY_HZ = 1000;
-constexpr uint8_t PWM_BITS = 10;
+constexpr uint32_t PWM_FREQUENCY_HZ = LED_CHANNELS == 2 ? aqua::PWM_TERRARIUM_HZ : aqua::PWM_CALIBRATION_HZ;
+constexpr uint8_t PWM_BITS = LED_CHANNELS == 2 ? aqua::PWM_TERRARIUM_BITS : aqua::PWM_BITS;
+constexpr uint32_t PWM_FULL = 1UL << PWM_BITS;
+static_assert(PWM_BITS <= SOC_LEDC_TIMER_BIT_WIDTH, "PWM resolution exceeds the hardware maximum");
+#if LED_CHANNELS == 2
+// Startup uses duty=0. A different board with active-low hardware needs a
+// separate glitch-free startup path before enabling maximum-width LEDC.
+static_assert(PWM_BITS < SOC_LEDC_TIMER_BIT_WIDTH || (!PWM_ACTIVE_LOW[0] && !PWM_ACTIVE_LOW[1]),
+              "14-bit startup requires active-high outputs");
+#endif
 constexpr char TIMEZONE[] = "CET-1CEST,M3.5.0/2,M10.5.0/3";
 constexpr uint64_t MIN_EPOCH = 1704067200ULL;  // 2024-01-01 UTC.
 constexpr uint64_t MAX_EPOCH = 4102444799ULL;  // 2099-12-31 UTC.
 constexpr uint32_t STA_ATTEMPT_MS = 15000;
 constexpr uint32_t STA_RETRY_MIN_MS = 30000;
 constexpr uint32_t STA_RETRY_MAX_MS = 120000;
+constexpr uint32_t RECOVERY_NVS_RETRY_MS = 30000;
+#if !CONFIG_ESP_TIME_FUNCS_USE_RTC_TIMER
+#error "Wi-Fi recovery clock preservation requires the RTC system timer"
+#endif
 #ifndef LED_WIFI_TX_POWER
 // SuperMini association failed at the driver's default power; lower-power board calibration.
 #define LED_WIFI_TX_POWER WIFI_POWER_8_5dBm
@@ -77,7 +96,7 @@ float humidity = NAN;
 uint32_t lastSensor = 0;
 uint32_t lastSample = 0;
 uint32_t lastOutput = 0;
-enum class TimeSource : uint8_t { None, Browser, Ntp };
+enum class TimeSource : uint8_t { None, Browser, Ntp, Rtc };
 std::atomic<TimeSource> timeSource{TimeSource::None};
 String apSsid;
 String apPassword;
@@ -95,6 +114,11 @@ std::atomic<int> lastStaReason{-1};
 std::atomic<int> lastStaRssi{0};
 uint64_t uptimeMs = 0;
 uint32_t previousMillis = 0;
+aqua::WifiRecovery wifiRecovery;
+bool recoveryStorageError = false;
+bool recoveryWriteAttempted = false;
+uint32_t recoveryLastWrite = 0;
+RTC_NOINIT_ATTR uint32_t wifiRecoveryClockMarker;
 
 struct WifiCredentials {
   uint8_t version = 1;
@@ -121,6 +145,18 @@ void stopPwm() {
   }
   actual = {};
   pwmOk = false;
+}
+
+bool writePwmValue(uint8_t channelIndex, uint32_t value) {
+  if (value > PWM_FULL) return false;
+  const auto channel = static_cast<ledc_channel_t>(channelIndex);
+  // At the C3's maximum resolution FULL is forbidden in the duty register.
+  // Force physical endpoints instead; update_duty re-enables PWM afterwards.
+  if (value == 0 || value == PWM_FULL) {
+    return ledc_stop(LEDC_LOW_SPEED_MODE, channel, value == PWM_FULL ? 1 : 0) == ESP_OK;
+  }
+  return ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, value) == ESP_OK &&
+      ledc_update_duty(LEDC_LOW_SPEED_MODE, channel) == ESP_OK;
 }
 
 bool startPwm() {
@@ -155,6 +191,14 @@ bool readClock(time_t &epoch, tm &local) {
          epoch <= static_cast<time_t>(MAX_EPOCH) && localtime_r(&epoch, &local) != nullptr;
 }
 
+uint32_t outputDuty(float level, uint8_t channel) {
+#if LED_CHANNELS == 2
+  return aqua::fineLowDuty(level, PWM_ACTIVE_LOW[channel], PWM_MIN_DUTY[channel], PWM_START_DUTY[channel], PWM_FULL);
+#else
+  return aqua::calibratedDuty(level, PWM_ACTIVE_LOW[channel], PWM_MIN_DUTY[channel]);
+#endif
+}
+
 void applyOutput() {
   if (!pwmOk) return;
   time_t epoch;
@@ -168,11 +212,9 @@ void applyOutput() {
   const float values[] = {desired.warm, desired.cool};
   const float previous[] = {actual.warm, actual.cool};
   for (uint8_t i = 0; i < LED_CHANNELS; ++i) {
-    const uint32_t value = aqua::duty(values[i], PWM_ACTIVE_LOW[i]);
-    if (value == aqua::duty(previous[i], PWM_ACTIVE_LOW[i])) continue;
-    const auto channel = static_cast<ledc_channel_t>(i);
-    if (ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, value) != ESP_OK ||
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, channel) != ESP_OK) {
+    const uint32_t value = outputDuty(values[i], i);
+    if (value == outputDuty(previous[i], i)) continue;
+    if (!writePwmValue(i, value)) {
       stopPwm();
       Serial.println("[PWM] WRITE FAILED: all outputs held OFF.");
       return;
@@ -230,9 +272,13 @@ void loadSettings() {
   preferencesOpen = preferences.begin("aqualight", false);
   storageOk = preferencesOpen;
   if (!preferencesOpen) {
+    wifiRecovery.begin(aqua::WIFI_RECOVERY_MAX_RESTARTS);
     Serial.println("[NVS] Cannot open storage; defaults active, lamp OFF.");
     return;
   }
+  const uint8_t restarts = preferences.isKey("net_reboots") ? preferences.getUChar("net_reboots", 255) : 0;
+  wifiRecovery.begin(restarts);
+  recoveryStorageError = restarts > aqua::WIFI_RECOVERY_MAX_RESTARTS;
   if (preferences.isKey("settings")) {
     const String stored = preferences.getString("settings");
     if (stored.length() > 512 || stored.length() != strlen(stored.c_str()) ||
@@ -325,6 +371,7 @@ void startNetwork() {
 
 void updateNetwork(uint32_t now) {
   const bool connected = WiFi.status() == WL_CONNECTED;
+  wifiRecovery.observe(now, wifi.ssid[0] && !wifiPending, connected);
   if (wifiPending && aqua::due(now, wifiRequested, 300)) {
     if (!staConfigDisconnecting) {
       WiFi.disconnectAsync(false, false);
@@ -347,12 +394,65 @@ void updateNetwork(uint32_t now) {
     }
   } else if (!wifiPending && wifi.ssid[0]) {
     if (wasConnected || (staAttemptActive && aqua::due(now, staAttemptStarted, STA_ATTEMPT_MS))) {
+      if (staAttemptActive && aqua::due(now, staAttemptStarted, STA_ATTEMPT_MS)) wifiRecovery.failedAttempt();
       scheduleStaRetry(now);
     } else if (!staAttemptActive && aqua::due(now, lastWifiAttempt, staRetryDelay)) {
       startStaAttempt(now);
     }
   }
   wasConnected = connected;
+}
+
+void initializeClock(uint32_t recoveryMarker) {
+  const time_t retained = time(nullptr);
+  if (aqua::resumeRecoveryClock(esp_reset_reason() == ESP_RST_SW, recoveryMarker,
+                               retained, MIN_EPOCH, MAX_EPOCH)) {
+    timeSource.store(TimeSource::Rtc);
+    Serial.println("[TIME] Retained RTC clock after Wi-Fi recovery restart.");
+  } else {
+    timeval unset = {};
+    settimeofday(&unset, nullptr);
+    timeSource.store(TimeSource::None);
+  }
+}
+
+bool persistRecoveryCount(uint8_t count, uint32_t now) {
+  if (recoveryWriteAttempted && !aqua::due(now, recoveryLastWrite, RECOVERY_NVS_RETRY_MS)) return false;
+  recoveryWriteAttempted = true;
+  recoveryLastWrite = now;
+  const bool okay = preferencesOpen && preferences.putUChar("net_reboots", count) == sizeof(uint8_t) &&
+      preferences.getUChar("net_reboots", 255) == count;
+  recoveryStorageError = !okay;
+  if (!okay) Serial.println("[NET] Recovery counter save failed; automatic restart withheld.");
+  return okay;
+}
+
+void pollWifiRecovery(uint32_t now) {
+  const bool resetBudget = wifiRecovery.clearDue(now);
+  const bool restart = wifiRecovery.restartDue(now);
+  const bool connected = WiFi.status() == WL_CONNECTED;
+  if ((restart && connected) || (resetBudget && !connected)) return;
+  if ((!resetBudget && !restart) || !preferencesOpen || !storageOk || wifiPending ||
+      maintenance::rebootRequested() || (restart && WiFi.softAPgetStationNum() != 0) || !ledota::tryLock()) return;
+  // The OTA lock also excludes cloud image writes and local uploads, and refuses
+  // acquisition until the running OTA image has passed startup validation.
+  if (!flushPendingSettings() || settingsDirty) { ledota::unlock(); return; }
+  const uint8_t next = resetBudget ? 0 : wifiRecovery.used() + 1;
+  if (!persistRecoveryCount(next, now)) { ledota::unlock(); return; }
+  if (resetBudget) {
+    wifiRecovery.cleared();
+    Serial.println("[NET] Stable Wi-Fi for 10 min; automatic restart budget restored.");
+    ledota::unlock();
+    return;
+  }
+  wifiRecovery.restarted(now);
+  time_t epoch;
+  tm local = {};
+  wifiRecoveryClockMarker = readClock(epoch, local) ? aqua::WIFI_RECOVERY_CLOCK_MAGIC : 0;
+  Serial.printf("[NET] Wi-Fi recovery restart %u/%u after persistent reconnect failure.\n",
+                wifiRecovery.used(), aqua::WIFI_RECOVERY_MAX_RESTARTS);
+  ESP.restart();
+  ledota::unlock();  // Only reached by test doubles or if restart unexpectedly returns.
 }
 
 bool startSensor() {
@@ -463,7 +563,7 @@ void sendState() {
   state += ",\"epoch\":"; state += clockValid ? String(static_cast<unsigned long long>(epoch)) : "0";
   state += ",\"localTime\":"; state += jsonString(localTime);
   state += ",\"minuteOfDay\":"; state += clockValid ? local.tm_hour * 60 + local.tm_min : 0;
-  state += ",\"timeSource\":"; state += jsonString(!clockValid ? "none" : source == TimeSource::Ntp ? "ntp" : "browser");
+  state += ",\"timeSource\":"; state += jsonString(!clockValid ? "none" : source == TimeSource::Ntp ? "ntp" : source == TimeSource::Rtc ? "rtc" : "browser");
   state += ",\"schedule\":{\"warm\":"; appendCurveJson(state, settings.warm);
   state += ",\"cool\":"; appendCurveJson(state, settings.cool);
   const bool connected = WiFi.status() == WL_CONNECTED;
@@ -481,6 +581,12 @@ void sendState() {
       ? (staRetryDelay - retryElapsed + 999) / 1000 : 0;
   state += ",\"lastDisconnectReason\":"; state += lastStaReason.load();
   state += ",\"lastDisconnectRssi\":"; state += lastStaRssi.load();
+  state += ",\"recoveryRestartsUsed\":"; state += wifiRecovery.used();
+  state += ",\"recoveryRestartsRemaining\":"; state += wifiRecovery.remaining();
+  state += ",\"recoveryState\":";
+  state += jsonString(!wifi.ssid[0] ? "unconfigured" : recoveryStorageError ? "storage_error" :
+      connected ? (wifiRecovery.used() ? "stabilizing" : "online") : !wifiRecovery.remaining() ? "limited" :
+      wifiRecovery.restartDue(millis()) ? "restart_waiting" : "reconnecting");
   state += "},\"channels\":"; state += LED_CHANNELS;
   state += ",\"warmPin\":"; state += WARM_PIN;
   state += ",\"coolPin\":"; state += COOL_PIN;
@@ -625,21 +731,23 @@ void configureRoutes() {
 }
 
 void setup() {
+  const uint32_t recoveryMarker = wifiRecoveryClockMarker;
+  wifiRecoveryClockMarker = 0;  // One shot, consumed before any possible startup failure.
   pwmOk = startPwm();
   Serial.begin(115200);
   const uint32_t started = millis();
   while (!Serial && !aqua::due(millis(), started, 1500)) delay(10);
   Serial.println("\nAquaLight ESP32-C3 controller");
 #if LED_CHANNELS == 2
-  Serial.println("[PWM] Warm GPIO0 (2700 K), cool GPIO4 (6500 K), 1000 Hz, 10 bit.");
+  Serial.println("[PWM] Full-spectrum purple GPIO0 (blue + red), cool GPIO4 (6500 K), 1000 Hz, 13 bit, restored 5-percent turn-on curve.");
 #else
-  Serial.println("[PWM] Single channel GPIO4, I2C SDA GPIO1 / SCL GPIO0, 1000 Hz, 10 bit.");
+  Serial.println("[PWM] Single channel GPIO4, I2C SDA GPIO1 / SCL GPIO0, 1000 Hz, 13 bit, gamma 2.");
 #endif
   if (!pwmOk) Serial.println("[PWM] INIT FAILED; all outputs held OFF.");
   loadSettings();
-  // Never restore a saved wall-clock timestamp: after a power outage it would be stale.
-  timeval unset = {};
-  settimeofday(&unset, nullptr);
+  // Only a marked Wi-Fi recovery soft reset may retain the live RTC clock.
+  // Every power outage and unrelated reset still requires fresh synchronization.
+  initializeClock(recoveryMarker);
   sntp_set_time_sync_notification_cb([](timeval *) { timeSource.store(TimeSource::Ntp); });
   configTzTime(TIMEZONE, "pool.ntp.org", "time.cloudflare.com", "time.google.com");
   startNetwork();
@@ -674,5 +782,6 @@ void loop() {
   ledota::poll(pwmOk && storageOk && serverStarted, !settingsDirty && storageOk);
   maintenance::poll();
   if (maintenance::rebootRequested()) maintenance::rebootIfSafe(flushPendingSettings() && !settingsDirty);
+  pollWifiRecovery(millis());
   delay(1);
 }

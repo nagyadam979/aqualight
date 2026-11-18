@@ -11,7 +11,7 @@
 #include "cloud_update.h"
 
 #ifndef LED_CONTROL_VERSION
-#define LED_CONTROL_VERSION "1.1.0"
+#define LED_CONTROL_VERSION "1.2.5"
 #endif
 
 namespace maintenance {

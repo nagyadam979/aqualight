@@ -198,9 +198,116 @@ function eventAt(minute, level, target = elements.get('graph'), extra = {}) {
 }
 function call(name, argument) { context.testEvent = argument; return run(name + '(testEvent)'); }
 
+async function touchAndUndoTest() {
+  const original = run('JSON.stringify(draft)'), originalWarm = snapshot('warm');
+  const id = run('draft.warm[0].id'), graph = elements.get('graph');
+  const pointHandle = () => graph.handles.get(id);
+  let prevented = false;
+  const touch = {pointerType: 'touch', preventDefault() { prevented = true; }};
+  assert.match(header, /touch-action:pan-y pinch-zoom/);
+  assert.match(header, /\.chart\.moving,\.chart\.moving svg\{touch-action:none/);
+  assert.equal(run('graphMoveEnabled'), false);
+  call('graphPointerDown', eventAt(480, 0, pointHandle(), touch));
+  call('graphPointerMove', eventAt(600, 70, undefined, touch));
+  call('graphPointerCancel', eventAt(600, 70, undefined, touch));
+  assert.equal(snapshot('warm'), originalWarm); // A vertical scroll starting on a handle cannot edit.
+  assert.equal(prevented, false); assert.equal(graph.hasPointerCapture(1), false);
+  assert.equal(run('undoHistory.length'), 0);
+  assert.equal(elements.get('undoProgram').disabled, true);
+  elements.get('graphMove').listeners.click();
+  assert.equal(run('graphMoveEnabled'), true);
+  assert.equal(elements.get('graphMove').attrs['aria-pressed'], 'true');
+  call('graphPointerDown', eventAt(480, 0, pointHandle(), touch));
+  call('graphPointerMove', eventAt(600, 70, undefined, touch));
+  call('graphPointerMove', eventAt(630, 80, undefined, touch));
+  const midDrag = run('JSON.stringify(draft)'), callsBeforeBlockedSave = calls.length;
+  assert.equal(elements.get('saveProgram').disabled, true);
+  assert.equal(elements.get('preset').disabled, true);
+  assert.equal(elements.get('addPoint').disabled, true);
+  assert.equal(run("insertPoint('warm',720,10)"), false);
+  assert.equal(run('removePoint(selected.warm)'), false);
+  elements.get('preset').listeners.click();
+  run("activateCurve('cool')");
+  call('graphKeyDown', eventAt(630, 80, pointHandle(), {key: 'ArrowUp'}));
+  await run('saveProgram()');
+  assert.equal(run('JSON.stringify(draft)'), midDrag); // Second-finger actions cannot corrupt a drag transaction.
+  assert.equal(run('activeCurve'), 'warm');
+  assert.equal(calls.length, callsBeforeBlockedSave);
+  assert.equal(run('undoHistory.length'), 1); // One complete gesture is one undo.
+  assert.equal(elements.get('undoProgram').disabled, true); // No undo while a pointer owns the edit.
+  call('graphPointerUp', eventAt(630, 80, undefined, touch));
+  assert.notEqual(snapshot('warm'), originalWarm);
+  const callsBeforeUndo = calls.length;
+  elements.get('undoProgram').listeners.click();
+  assert.equal(calls.length, callsBeforeUndo);
+  assert.equal(snapshot('warm'), originalWarm);
+  assert.equal(run('dirty'), true); // Undo remains an explicit unsaved preview.
+  const revision = run('draftRevision');
+  call('graphPointerDown', eventAt(480, 0, pointHandle(), touch));
+  call('graphPointerMove', eventAt(600, 70, undefined, touch));
+  graph.listeners.lostpointercapture(eventAt(600, 70, undefined, touch));
+  assert.equal(snapshot('warm'), originalWarm); // Cancelled gestures roll back instead of committing.
+  assert.equal(run('undoHistory.length'), 0);
+  assert.ok(run('draftRevision') > revision);
+  assert.equal(run('drag'), null);
+  elements.get('graphMove').listeners.click();
+  assert.equal(elements.get('graphMove').attrs['aria-pressed'], 'false');
+
+  run("insertPoint('warm',600,30)");
+  const withInserted = snapshot('warm');
+  run('removePoint(selected.warm)');
+  assert.equal(snapshot('warm'), originalWarm);
+  run('undoProgram()'); assert.equal(snapshot('warm'), withInserted);
+  run('undoProgram()'); assert.equal(snapshot('warm'), originalWarm);
+
+  const countBeforeTaps = run('draft.warm.length');
+  run('suppressDoubleUntil=0');
+  for (let tap = 0; tap < 2; tap++) {
+    call('graphPointerDown', eventAt(660, 35, undefined, touch));
+    call('graphPointerUp', eventAt(660, 35, undefined, touch));
+    graph.listeners.lostpointercapture(eventAt(660, 35, undefined, touch));
+  }
+  assert.equal(run('draft.warm.length'), countBeforeTaps + 1); // Normal implicit capture release preserves double-tap detection.
+  run('undoProgram()'); assert.equal(snapshot('warm'), originalWarm);
+  call('graphKeyDown', eventAt(480, 0, pointHandle(), {key: 'ArrowUp'}));
+  assert.equal(run('draft.warm[0].level'), '1');
+  run('undoProgram()'); assert.equal(snapshot('warm'), originalWarm);
+
+  const input = elements.get('points').children[0].children[1].children[0];
+  input.listeners.focus(); input.value = '2'; input.listeners.input();
+  input.value = '25'; input.listeners.input();
+  assert.equal(run('undoHistory.length'), 1); // Typing a number is one edit, not one per digit.
+  input.listeners.focus(); input.value = '26'; input.listeners.input();
+  assert.equal(run('undoHistory.length'), 2); // Returning to a field starts a new edit.
+  run('undoProgram()'); assert.equal(run('draft.warm[0].level'), '25');
+  run('undoProgram()'); assert.equal(snapshot('warm'), originalWarm);
+  elements.get('preset').listeners.click();
+  run('undoProgram()'); assert.equal(run('JSON.stringify(draft)'), original);
+  if (!singleChannel) {
+    run("activateCurve('cool');insertPoint('cool',660,25)");
+    run("activateCurve('warm');undoProgram()");
+    assert.equal(run('activeCurve'), 'cool');
+    assert.equal(run('JSON.stringify(draft)'), original);
+    run("activateCurve('warm')");
+  }
+  // A pending save must never overwrite an undo made while its HTTP response is in flight.
+  run("insertPoint('warm',600,30)");
+  heldPath = '/api/program';
+  const pendingSave = run('saveProgram()'); await flush();
+  run('undoProgram()'); release(); await pendingSave; heldPath = null;
+  assert.equal(snapshot('warm'), originalWarm); assert.equal(run('dirty'), true);
+  // Restore the fixture without writing another program, leaving other tests independent.
+  state.schedule.warm = [{minute:480,level:0},{minute:540,level:50},{minute:1020,level:50},{minute:1080,level:0}];
+  state.schedule.cool = [{minute:450,level:0},{minute:570,level:40},{minute:1110,level:0}];
+  run('dirty=false;savedSignature=""'); await run('refresh()');
+  calls.length = 0;
+  console.log('PASS editor: scroll-safe touch lock; explicit movement mode; cancelled drag rollback; multitouch guards; grouped drag/input undo; insert/delete/preset/channel undo; undo during save preserves draft');
+}
+
 async function singleChannelTest() {
   run(script); await flush(); await flush();
   assert.equal(run('single'), true);
+  await touchAndUndoTest();
   assert.equal(elements.get('points').children.length, 4);
   // Only one curve is drawn and the cool outputs/curve are never exposed.
   assert.equal((elements.get('graph').innerHTML.match(/fill="url\(#/g) || []).length, 1);
@@ -224,6 +331,7 @@ async function singleChannelTest() {
 (async () => {
   if (singleChannel) return singleChannelTest();
   run(script); await flush(); await flush();
+  await touchAndUndoTest();
   assert.equal(elements.get('temperature').textContent, '25,6');
   assert.equal(elements.get('points').children.length, 4);
   assert.equal(elements.get('wifiStatus').textContent, state.network.ssid);

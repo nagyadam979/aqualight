@@ -9,7 +9,24 @@ namespace aqua {
 
 constexpr std::size_t MAX_POINTS = 16;
 constexpr uint32_t DAY_SECONDS = 86400;
-constexpr uint32_t PWM_FULL = 1024;  // Native 10-bit LEDC's constant-HIGH endpoint.
+// Stay below the C3's 14-bit maximum so 2^PWM_BITS is a valid constant-HIGH endpoint.
+constexpr uint8_t PWM_BITS = 13;
+constexpr uint32_t PWM_FULL = 1UL << PWM_BITS;
+// Measured first visible light on the previous gamma-2 scale (8%, 10%, 9%).
+constexpr uint32_t PWM_MIN_WARM = 52;
+constexpr uint32_t PWM_MIN_COOL = 82;
+constexpr uint32_t PWM_MIN_SINGLE = 66;
+constexpr uint32_t PWM_CALIBRATION_HZ = 1000;
+constexpr uint32_t PWM_TERRARIUM_HZ = 1000;
+constexpr uint8_t PWM_TERRARIUM_BITS = 13;
+constexpr uint32_t PWM_TERRARIUM_FULL = 1UL << PWM_TERRARIUM_BITS;
+constexpr uint32_t PWM_TERRARIUM_SCALE = PWM_TERRARIUM_FULL / PWM_FULL;
+constexpr uint32_t PWM_AT_FIVE_WARM = PWM_MIN_WARM * PWM_TERRARIUM_SCALE;
+constexpr uint32_t PWM_AT_FIVE_COOL = PWM_MIN_COOL * PWM_TERRARIUM_SCALE;
+// Restore the 1.2.2 curve: the main LEDs visibly started at the 5% anchors.
+// Keep the electrical low-level PWM range for the user's auxiliary LED wiring.
+constexpr uint32_t PWM_START_WARM = 1;
+constexpr uint32_t PWM_START_COOL = 1;
 enum class Mode : uint8_t { Off, Manual, Auto };
 
 struct Point { uint16_t minute; uint8_t level; };
@@ -129,8 +146,45 @@ inline Levels output(const Settings &settings, bool clockValid, uint32_t secondO
 inline uint32_t duty(float percent, bool activeLow) {
   if (!std::isfinite(percent) || percent < 0) percent = 0;
   if (percent > 100) percent = 100;
-  const uint32_t value = static_cast<uint32_t>(std::lround(percent * PWM_FULL / 100));
+  // Gamma 2: concentrate the 100 control steps near OFF. Apply after schedule
+  // interpolation so manual and automatic levels share the same smooth curve.
+  const float normalized = percent / 100.0f;
+  const uint32_t value = static_cast<uint32_t>(std::lround(normalized * normalized * PWM_FULL));
   return activeLow ? PWM_FULL - value : value;
+}
+inline uint32_t calibratedDuty(float percent, bool activeLow, uint32_t minimum) {
+  if (!std::isfinite(percent) || percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+  if (minimum > PWM_FULL) minimum = PWM_FULL;
+  // 0 is genuinely OFF; 1 is the measured first visible level. Fractional
+  // automatic levels below 1 ramp toward that threshold instead of jumping.
+  const float fraction = percent > 1 ? (percent - 1) / 99.0f : 0;
+  const float raw = percent < 1 ? minimum * percent :
+      minimum + (PWM_FULL - minimum) * fraction * fraction;
+  const uint32_t value = static_cast<uint32_t>(std::lround(raw));
+  return activeLow ? PWM_FULL - value : value;
+}
+inline uint32_t fineLowDuty(float percent, bool activeLow, uint32_t atFive, uint32_t atOne,
+                            uint32_t full = PWM_FULL) {
+  if (!std::isfinite(percent) || percent < 0) percent = 0;
+  if (percent > 100) percent = 100;
+  if (atFive < 1) atFive = 1;
+  if (atFive > full) atFive = full;
+  if (atOne < 1) atOne = 1;
+  if (atOne > atFive) atOne = atFive;
+  // Map the electrical low range from atOne to atFive. The main LEDs need
+  // not emit visible light at every value below the measured 5% anchors.
+  float raw;
+  if (percent <= 1) raw = atOne * percent;
+  else if (percent <= 5) {
+    const float fraction = (percent - 1) / 4.0f;
+    raw = atOne + (atFive - atOne) * fraction * fraction;
+  } else {
+    const float fraction = (percent - 5) / 95.0f;
+    raw = atFive + (full - atFive) * fraction * fraction;
+  }
+  const uint32_t value = static_cast<uint32_t>(std::lround(raw));
+  return activeLow ? full - value : value;
 }
 inline bool due(uint32_t now, uint32_t previous, uint32_t interval) {
   return static_cast<uint32_t>(now - previous) >= interval;

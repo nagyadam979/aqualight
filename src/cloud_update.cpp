@@ -22,7 +22,7 @@
 #error "LED OTA requires rollback-enabled bootloader and the trusted CA bundle"
 #endif
 #ifndef LED_CONTROL_VERSION
-#define LED_CONTROL_VERSION "1.1.0"
+#define LED_CONTROL_VERSION "1.2.5"
 #endif
 
 namespace ledota {
@@ -262,6 +262,13 @@ bool checkAndInstall() {
   snprintf(state.availableVersion, sizeof(state.availableVersion), "%s", manifest.version.c_str());
   portEXIT_CRITICAL(&stateMux);
   if (hashMatches(esp_ota_get_running_partition(), manifest)) { setState("up_to_date", "", 100); return true; }
+  const VersionOrder order = compareVersions(manifest.version, LED_CONTROL_VERSION);
+  if (order == VersionOrder::Invalid) {
+    setState("error", "OTA versions must use numeric MAJOR.MINOR.PATCH"); return false;
+  }
+  // A local OTA must survive an older cloud channel, including a different
+  // image with the same version. Future cloud updates must bump the version.
+  if (order != VersionOrder::Newer) { setState("up_to_date", "", 100); return true; }
   setState("downloading");
   const esp_partition_t *target = downloadImage(manifest);
   if (!target) { setState("error", "Image download or verification failed"); return false; }

@@ -51,6 +51,73 @@ def fixture_image():
 
 
 class OtaTests(unittest.TestCase):
+    def test_version_guard_and_actual_install_path(self):
+        source = r'''
+#include "ota_contract.h"
+#include <atomic>
+#include <cassert>
+#include <cstdio>
+#include <ctime>
+using namespace ledota;
+using String=std::string;
+#define LED_CONTROL_VERSION "1.2.0"
+#define portENTER_CRITICAL(mutex) ((void)0)
+#define portEXIT_CRITICAL(mutex) ((void)0)
+constexpr int WL_CONNECTED=1,ESP_OK=0,pdTRUE=1,portMAX_DELAY=0;
+struct { int status() { return WL_CONNECTED; } } WiFi;
+struct { uint32_t lastCheck; char releaseId[65],availableVersion[65]; } state;
+std::string status;
+void setState(const char *value,const char * = "",unsigned = 0) { status=value; }
+Manifest offered;
+bool sameHash=false;
+unsigned downloads=0;
+struct esp_partition_t {};
+const esp_partition_t *esp_ota_get_running_partition() { return nullptr; }
+bool hashMatches(const esp_partition_t *,const Manifest &) { return sameHash; }
+bool fetchEnvelope(String &) { return true; }
+bool parseEnvelope(const String &,Manifest &manifest) { manifest=offered; return true; }
+const esp_partition_t *downloadImage(const Manifest &) { ++downloads; return nullptr; }
+std::atomic<bool> ready{false},bootSelected{false};
+void ulTaskNotifyTake(int,int) {}
+int esp_ota_set_boot_partition(const esp_partition_t *) { return ESP_OK; }
+''' + firmware_function("bool checkAndInstall()") + r'''
+int main() {
+  assert(compareVersions("1.2.0","1.2.0")==VersionOrder::Equal);
+  assert(compareVersions("1.1.99","1.2.0")==VersionOrder::Older);
+  assert(compareVersions("1.2.1","1.2.0")==VersionOrder::Newer);
+  assert(compareVersions("1.10.0","1.2.9")==VersionOrder::Newer);
+  assert(compareVersions("2.0.0","1.99.99")==VersionOrder::Newer);
+  assert(compareVersions("0.0.0","0.0.1")==VersionOrder::Older);
+  assert(compareVersions("4294967295.0.0","4294967294.9.9")==VersionOrder::Newer);
+  for(const auto bad:{"", "1", "1.2", "1.2.0.0", "1.2.0-beta", "1.2.0+meta",
+      " 1.2.0", "1.2.0 ", "-1.2.0", "+1.2.0", "01.2.0", "1.02.0", "1.2.00",
+      "4294967296.0.0", "1.4294967296.0", "1.2.4294967296", "a.b.c", ".1.2", "1..2"}) {
+    assert(compareVersions(bad,"1.2.0")==VersionOrder::Invalid);
+    assert(compareVersions("1.2.1",bad)==VersionOrder::Invalid);
+  }
+  for(const auto version:{"1.1.0","1.2.0","0.0.0"}) {
+    offered.version=version; downloads=0; sameHash=false;
+    assert(checkAndInstall()); assert(status=="up_to_date" && downloads==0);
+  }
+  for(const auto version:{"1.2.1","1.10.0","2.0.0"}) {
+    offered.version=version; downloads=0;
+    assert(!checkAndInstall()); // Fake download returns nullptr, proving it was reached.
+    assert(downloads==1 && status=="error");
+  }
+  offered.version="1.2.1-beta"; downloads=0;
+  assert(!checkAndInstall()); assert(status=="error" && downloads==0);
+  sameHash=true; offered.version="unknown";
+  assert(checkAndInstall()); // Identical image remains accepted before the version gate.
+  assert(status=="up_to_date" && downloads==0);
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="led-ota-version-") as folder:
+            binary = Path(folder) / "versions"
+            subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=address,undefined", "-I", str(ROOT / "src"), "-x", "c++", "-",
+                            "-o", str(binary)], input=source, text=True, check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_native_contract_and_image_prefix(self):
         source = r'''
 #include "ota_contract.h"

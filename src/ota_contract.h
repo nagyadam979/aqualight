@@ -28,6 +28,39 @@ struct Manifest {
   uint64_t size = 0;
 };
 
+enum class VersionOrder { Invalid, Older, Equal, Newer };
+
+// OTA releases use exactly three unsigned decimal components. Fail closed for
+// prerelease labels, incomplete versions, overflow and ambiguous leading zeros.
+inline bool parseVersion(const std::string &text, uint32_t (&parts)[3]) {
+  std::size_t offset = 0;
+  for (unsigned component = 0; component < 3; ++component) {
+    const std::size_t start = offset;
+    uint32_t value = 0;
+    while (offset < text.size() && text[offset] >= '0' && text[offset] <= '9') {
+      const unsigned digit = static_cast<unsigned>(text[offset++] - '0');
+      if (value > UINT32_MAX / 10 || (value == UINT32_MAX / 10 && digit > UINT32_MAX % 10)) return false;
+      value = value * 10 + digit;
+    }
+    if (offset == start || (offset - start > 1 && text[start] == '0')) return false;
+    parts[component] = value;
+    if (component < 2) {
+      if (offset == text.size() || text[offset++] != '.') return false;
+    } else if (offset != text.size()) return false;
+  }
+  return true;
+}
+
+inline VersionOrder compareVersions(const std::string &candidate, const std::string &current) {
+  uint32_t next[3], running[3];
+  if (!parseVersion(candidate, next) || !parseVersion(current, running)) return VersionOrder::Invalid;
+  for (unsigned component = 0; component < 3; ++component) {
+    if (next[component] < running[component]) return VersionOrder::Older;
+    if (next[component] > running[component]) return VersionOrder::Newer;
+  }
+  return VersionOrder::Equal;
+}
+
 inline bool validIdentifier(const std::string &value, bool version = false) {
   if (value.empty() || value.size() > 64 || value.find("..") != std::string::npos) return false;
   for (std::size_t i = 0; i < value.size(); ++i) {
