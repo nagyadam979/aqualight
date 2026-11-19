@@ -2,6 +2,20 @@
 
 ESP32-C3 SuperMini terráriumvilágítás teljes spektrumú (lila, kék + piros) és hideg fehér LED-szalaggal és AHT20-szenzorral. A teljes webes felület és a világításvezérlés az ESP-n található, külső JavaScript nélkül. Az opcionális, aláírt firmware-frissítés külön Firebase-csatornát használ; a világítás internet és felhő nélkül is működik.
 
+## A terrárium fővezérlője
+
+A kétcsatornás ESP32-C3 önállóan vezérli a terrárium világítását és méri a klímáját. A helyi weboldal egyben átjáró az egycsatornás LED-szalag vezérlőjéhez.
+
+| Feladat | Működés |
+| --- | --- |
+| Világítás | A GPIO0 a teljes spektrumú, a GPIO4 a hideg fehér csatornát vezérli. Mindkettőnek saját kézi fényereje és 2–16 pontos napi görbéje van. A pontok között a fényerő folyamatosan változik. A mód, a görbék és a kézi értékek NVS-ben maradnak meg. |
+| Idő | A napi program magyar helyi idő szerint fut. A master NTP-ből, böngészőből vagy saját érvényes idő hiányában a még járó társvezérlőtől kaphat időt. Teljes áramtalanítás után a kézi mód azonnal működik, az automata az óraszinkronra vár. |
+| Klíma | Az AHT20 külön feladatban mér. A főciklus a lezárt tízperces összesítéseket flashbe menti, és a helyi felületen letölthetővé teszi az előzményeket. [A mérési napló részletei](#terrárium-mérési-naplója) |
+| Hálózat és kezelés | A master az otthoni Wi-Fi-n szolgálja ki mindkét panelt. A párosított LED-szalaggal titkosított ESP-NOW kapcsolaton cserél állapotot és parancsokat. Mindkét board önállóan futtatja a mentett programját. A tartalék hotspotot a LED-szalag biztosítja. |
+| Karbantartás | A master USB-n, helyi ArduinoOTA-val vagy aláírt felhős kiadásból frissíthető. Az USB-s állapotlekérdezés és a helyi Telnet diagnosztikát ad. A webfelületről elindítható a társvezérlő karbantartási hotspotja. |
+
+A Wi-Fi-s master az aktív változat. Az alábbi BLE-próba külön, félretett kísérlet.
+
 ## Androidos BLE-próba – 1.4.0-ble
 
 Az új pilot a terrárium kétcsatornás boardját közvetlenül Android Chrome-ból vezérli, titkosított BLE-kapcsolattal. A telefonos felület bejelentkezés nélkül megnyitható HTTPS-oldal; címe a helyi, Gitből kizárt `.ble-deployment.json` fájlban található. A felület elkészült és közzé van téve; a hálózati firmware-átvitel megszakadt, a master még 1.3.2-t jelez. A BLE-verzió USB-s feltöltése és a tényleges telefonos próba hátravan. A fordítás önmagában nem bizonyítja az eszközre telepítést.
@@ -167,6 +181,18 @@ A saját AP elérhetőségéért az állomáscsatlakozásnak 15 másodperces hat
 A mód, a program és a kézi fényerő megmarad újraindításkor. A kézi csúszkák beállítása az utolsó módosítás után 2 másodperccel kerül flashbe; a program és a módváltás azonnal mentődik. Áramszünet után automata módban a kimenetek érvényes új időszinkronig kikapcsolva maradnak. A rendszer nem állít vissza egy régi, elmentett dátumot. Kézi módban óra nélkül is világít a beállított értékkel.
 
 Az AHT20 hibája a lámpavezérlést nem állítja le. A hibás mérés helyett a felület érvénytelen adatot jelez, és az ESP újrapróbálja a szenzor inicializálását. PWM-hiba esetén mindkét kimenet kikapcsolt állapotba kerül.
+
+### Terrárium mérési naplója
+
+A kétcsatornás Wi-Fi-s terrárium élő mérései alatt az **Utolsó 48 óra mérései (CSV)** hivatkozás tölti le a naplót. A közvetlen végpont a `GET /api/sensor-history.csv`. A fájl időrendben tartalmazza az utolsó 48 óra lezárt, UTC szerint igazított tízperces ablakait, amelyekhez van érvényes mérési pár. Az oszlopok az ablak kezdete (ISO 8601 UTC), a hőmérséklet–páratartalom párok száma, a hőmérséklet átlaga és populációs szórása (°C), majd a relatív páratartalom átlaga és populációs szórása (%). A CSV vesszővel tagol, a tizedesjel pont.
+
+Az óraszinkron után az AHT20 meglévő, öt másodpercenkénti mintavétele szolgáltatja az adatokat. Egy hibás mérési pár kimarad. Egy ablakban egyetlen érvényes pár esetén a szórás nulla; üres ablakhoz nem készül sor. Az aktuális ablak RAM-ban gyűlik, ezért újraindításkor elveszhet. Visszafelé állított óra esetén a folyamatban lévő ablak mérései addig szünetelnek, amíg az idő ismét el nem éri annak kezdetét. Érvénytelen eszközidőnél vagy elérhetetlen naplótárolónál a végpont HTTP 503-at ad.
+
+A lezárt ablakokat a meglévő 128 KiB-os `spiffs` partíció LittleFS-ként tárolja, 49, körforgásban használt fájlban. Egy fájl egy UTC-óra legfeljebb hat rekordját tartalmazza. A fájlok ellenőrzőösszeggel védett rekordokat tartalmaznak, és az órafájl cseréje csak az új példány lemezre írása után történik. Első indításkor csak a teljesen üres partíció formázódik. A teljes flash törlése a naplót is törli.
+
+A szenzorfeladat a lezárt összesítést egy nyolc rekordos RAM-sorba adja. Az újraindítás a nyitott ablak mellett a még kiírásra váró rekordokat is elveszítheti. A HTTP-kiszolgáló részletekben olvassa és küldi a CSV-t, így a teljes exporthoz nem kell külön RAM-puffer.
+
+**Ellenőrzés és telepítési állapot.** Az `aqualight` és `aqualight1ch` PlatformIO-build sikeres volt. A `python3 test_sensor_history.py` a statisztikát, az időablakokat, a 48 órás határt, a fájlok körforgását és a sérült vagy félbeszakadt írást vizsgálja gazdagépen. A HTTP-, szenzorútvonal- és közös felületi tesztek is sikeresek voltak. A naplózó build még nem került a terráriumra. Fizikai flashírást és áramkimaradást ezen a builden még nem próbáltunk. A külön BLE-böngészőteszt futtatásához hiányzott a `ble-web/ble_transport.js` fájl.
 
 ## Helyi API
 

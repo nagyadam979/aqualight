@@ -41,6 +41,7 @@ void BoundedWebServer::close(Session &s) {
   s.headerCount = 0;
   for (auto &header : s.headers) { header.name = String(); header.value = String(); }
   s.responseHeader = String(); s.ownedBody = String();
+  s.stream.reset();
   s.body = nullptr; s.bodyLength = s.headerSent = s.bodySent = 0;
 }
 
@@ -94,6 +95,7 @@ void BoundedWebServer::transmit(Session &s, size_t &budget) {
   size_t quota = std::min<size_t>(budget, 1024);
   for (unsigned part = 0; part < 2 && quota && s.active; ++part) {
     const bool header = s.headerSent < s.responseHeader.length();
+    if (!header && s.stream) { transmitStream(s, budget, quota); return; }
     const char *data = header ? s.responseHeader.c_str() + s.headerSent : s.body + s.bodySent;
     const size_t remaining = header ? s.responseHeader.length() - s.headerSent : s.bodyLength - s.bodySent;
     if (!remaining) { close(s); return; }
@@ -103,12 +105,42 @@ void BoundedWebServer::transmit(Session &s, size_t &budget) {
       const size_t n = static_cast<size_t>(sent);
       if (header) s.headerSent += n; else s.bodySent += n;
       budget -= n; quota -= n; s.progress = millis();
-      if (s.headerSent == s.responseHeader.length() && s.bodySent == s.bodyLength) { close(s); return; }
+      if (!s.stream && s.headerSent == s.responseHeader.length() && s.bodySent == s.bodyLength) { close(s); return; }
     } else {
       if (sent == 0 || !retryable()) close(s);
       return;
     }
   }
+}
+
+void BoundedWebServer::transmitStream(Session &s, size_t &budget, size_t quota) {
+  auto &stream = *s.stream;
+  if (stream.sent == stream.length) {
+    constexpr size_t prefix = 8, capacity = 512;
+    const int length = stream.read(stream.chunk + (stream.chunked ? prefix : 0), capacity);
+    if (length == -2) return;
+    if (length < 0 || length > static_cast<int>(capacity)) { close(s); return; }
+    if (!stream.chunked && length == 0) { close(s); return; }
+    stream.sent = 0;
+    stream.length = length;
+    stream.last = length == 0;
+    if (stream.chunked) {
+      char sizeLine[prefix];
+      const auto sizeLength = std::snprintf(sizeLine, sizeof(sizeLine), "%x\r\n", static_cast<unsigned>(length));
+      std::memmove(stream.chunk + sizeLength, stream.chunk + prefix, length);
+      std::memcpy(stream.chunk, sizeLine, sizeLength);
+      std::memcpy(stream.chunk + sizeLength + length, "\r\n", 2);
+      stream.length += sizeLength + 2;
+    }
+  }
+  const size_t count = std::min(quota, stream.length - stream.sent);
+  const int sent = ::send(s.client.fd(), stream.chunk + stream.sent, count, MSG_DONTWAIT);
+  if (sent > 0) {
+    stream.sent += sent;
+    budget -= sent;
+    s.progress = millis();
+    if (stream.last && stream.sent == stream.length) close(s);
+  } else if (sent == 0 || !retryable()) close(s);
 }
 
 void BoundedWebServer::dispatch(size_t index) {
@@ -142,7 +174,12 @@ void BoundedWebServer::respond(Session &s, int code, const char *type, const cha
   if (s.invalidHeaders || !safeHeader("Content-Type", type)) { close(s); return; }
   if (!s.responseHeader.reserve(RESPONSE_HEADER_LIMIT)) { close(s); return; }
   char start[160];
-  std::snprintf(start, sizeof(start), "HTTP/1.1 %d %s\r\nContent-Length: %u\r\nConnection: close\r\n", code, reason(code), static_cast<unsigned>(length));
+  if (s.stream && s.stream->chunked)
+    std::snprintf(start, sizeof(start), "HTTP/1.1 %d %s\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n", code, reason(code));
+  else if (s.stream)
+    std::snprintf(start, sizeof(start), "HTTP/1.0 %d %s\r\nConnection: close\r\n", code, reason(code));
+  else
+    std::snprintf(start, sizeof(start), "HTTP/1.1 %d %s\r\nContent-Length: %u\r\nConnection: close\r\n", code, reason(code), static_cast<unsigned>(length));
   s.responseHeader = start;
   s.responseHeader += "Content-Type: "; s.responseHeader += type; s.responseHeader += "\r\n";
   bool cache = false, nosniff = false;
@@ -179,6 +216,16 @@ void BoundedWebServer::send(int code, const char *type, const String &body) {
 void BoundedWebServer::send_P(int code, const char *type, const char *body) { send_P(code, type, body, std::strlen(body)); }
 void BoundedWebServer::send_P(int code, const char *type, const char *body, size_t length) {
   if (current_ >= 0 && sessions_[current_].active) respond(sessions_[current_], code, type, body, length);
+}
+void BoundedWebServer::sendStream(int code, const char *type, BodyReader reader) {
+  if (current_ < 0 || !reader) return;
+  auto &s = sessions_[current_];
+  if (!s.active || s.responding) return;
+  s.stream.reset(new (std::nothrow) Stream());
+  if (!s.stream) { error(s, 503); return; }
+  s.stream->read = std::move(reader);
+  s.stream->chunked = s.request->http11();
+  respond(s, code, type, nullptr, 0);
 }
 void BoundedWebServer::sendHeader(const char *name, const char *value) {
   if (current_ < 0) return;

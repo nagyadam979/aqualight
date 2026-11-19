@@ -47,6 +47,11 @@
 #ifndef LED_CHANNELS
 #define LED_CHANNELS 2
 #endif
+#if !LED_BLE_ONLY && LED_CHANNELS == 2
+#define AQUA_SENSOR_HISTORY 1
+#include <freertos/queue.h>
+#include "sensor_history_storage.h"
+#endif
 #if LED_CHANNELS == 1
 #include "device_config.h"  // Private generated header, never stored in source control.
 #endif
@@ -127,6 +132,11 @@ float temperature = NAN;
 float humidity = NAN;
 uint32_t lastSensor = 0;
 uint32_t lastSample = 0;
+#if AQUA_SENSOR_HISTORY
+aqua::history::Window sensorHistoryWindow;
+QueueHandle_t sensorHistoryQueue = nullptr;
+bool sensorHistoryMounted = false;
+#endif
 uint32_t lastOutput = 0;
 aqua::SensorDiagnostics sensorDiagnostics;
 aqua::TimingDiagnostics loopDiagnostics;
@@ -293,6 +303,29 @@ bool readClock(time_t &epoch, tm &local) {
   return timeSource.load() != TimeSource::None && epoch >= static_cast<time_t>(MIN_EPOCH) &&
          epoch <= static_cast<time_t>(MAX_EPOCH) && localtime_r(&epoch, &local) != nullptr;
 }
+
+#if AQUA_SENSOR_HISTORY
+void advanceSensorHistory(uint32_t epoch) {
+  const auto record = sensorHistoryWindow.advance(epoch);
+  if (record.count && xQueueSend(sensorHistoryQueue, &record, 0) != pdTRUE)
+    Serial.println("[HISTORY] Queue full; window dropped.");
+}
+
+void pollSensorHistory(uint32_t now) {
+  static uint32_t lastAttempt = 0;
+  static unsigned failedAttempts = 0;
+  aqua::history::Record record;
+  if (!sensorHistoryQueue || (failedAttempts && !aqua::due(now, lastAttempt, 1000)) ||
+      xQueuePeek(sensorHistoryQueue, &record, 0) != pdTRUE) return;
+  lastAttempt = now;
+  if (!aqua::history::save(record)) {
+    if (++failedAttempts < 3) return;
+    Serial.println("[HISTORY] Could not save sensor window after three attempts.");
+  }
+  xQueueReceive(sensorHistoryQueue, &record, 0);
+  failedAttempts = 0;
+}
+#endif
 
 uint32_t outputDuty(float level, uint8_t channel) {
 #if LED_CHANNELS == 2
@@ -626,6 +659,11 @@ bool startSensor() {
 void updateSensor(uint32_t now) {
   if (!aqua::due(now, lastSensor, 5000)) return;
   lastSensor = now;
+#if AQUA_SENSOR_HISTORY
+  time_t epoch;
+  tm local;
+  if (sensorHistoryQueue && readClock(epoch, local)) advanceSensorHistory(epoch);
+#endif
   if (!sensorReady) {
     sensorReady = startSensor();
     return;
@@ -651,6 +689,12 @@ void updateSensor(uint32_t now) {
   humidity = nextHumidity;
   haveSample = true;
   lastSample = millis();
+#if AQUA_SENSOR_HISTORY
+  if (sensorHistoryQueue && readClock(epoch, local)) {
+    advanceSensorHistory(epoch);
+    sensorHistoryWindow.sample(epoch, nextTemperature, nextHumidity);
+  }
+#endif
   Serial.printf("[AHT20] %.2f C | %.2f %%RH\n", temperature, humidity);
 }
 
@@ -1216,6 +1260,25 @@ void configureRoutes() {
   });
   server.on("/favicon.ico", HTTP_GET, [] { server.send(204); });
   server.on("/api/state", HTTP_GET, sendState);
+#if AQUA_SENSOR_HISTORY
+  server.on("/api/sensor-history.csv", HTTP_GET, [] {
+    if (!sensorHistoryMounted) {
+      errorResponse(503, "A mérési napló tárolója nem elérhető.");
+      return;
+    }
+    time_t epoch;
+    tm local;
+    if (!readClock(epoch, local)) {
+      errorResponse(503, "A mérési naplóhoz érvényes eszközidő szükséges.");
+      return;
+    }
+    server.sendHeader("Content-Disposition", "attachment; filename=\"terrarium-meresek.csv\"");
+    server.sendStream(200, "text/csv; charset=utf-8",
+                      [csv = aqua::history::Csv(epoch)](char *output, size_t capacity) mutable {
+                        return csv.read(output, capacity);
+                      });
+  });
+#endif
   server.on("/api/peer/state", HTTP_GET, sendPeerState);
   server.on("/api/peer/command", HTTP_GET, sendCommandStatus);
   const char *paths[] = {"/api/mode", "/api/manual", "/api/program", "/api/time", "/api/wifi", "/api/update/check", "/api/maintenance/ap"};
@@ -1515,6 +1578,11 @@ void setup() {
   if (xTaskCreate(controlWorker, "led-control", 3072, nullptr, 2, &controlTaskHandle) != pdPASS) {
     controlTaskHandle = nullptr; stopPwm(); Serial.println("[CONTROL] Worker could not start; outputs OFF.");
   }
+#if AQUA_SENSOR_HISTORY
+  sensorHistoryMounted = aqua::history::mount();
+  if (sensorHistoryMounted) sensorHistoryQueue = xQueueCreate(8, sizeof(aqua::history::Record));
+  if (!sensorHistoryMounted || !sensorHistoryQueue) Serial.println("[HISTORY] Sensor logging unavailable.");
+#endif
   if (xTaskCreate(sensorWorker, "aht20", 4096, nullptr, 1, &sensorTaskHandle) != pdPASS) {
     sensorTaskHandle = nullptr; Serial.println("[AHT20] Worker could not start.");
   }
@@ -1546,6 +1614,9 @@ void loop() {
   pollBle(now);
 #else
   pollMesh(now);
+#if AQUA_SENSOR_HISTORY
+  pollSensorHistory(now);
+#endif
   const uint32_t httpStarted = millis();
   server.handleClient();
   httpDiagnostics.observe(millis() - httpStarted);

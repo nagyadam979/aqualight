@@ -166,6 +166,21 @@ int main() {
     server.sendHeader("Content-Encoding", "gzip");
     server.send_P(200, "text/html", binary, sizeof(binary));
   });
+  server.on("/stream", HTTP_GET, [&] {
+    server.sendHeader("Content-Disposition", "attachment; filename=history.csv");
+    server.sendStream(200, "text/csv", [step = 0](char *bytes, size_t size) mutable -> int {
+      assert(size >= 3);
+      switch (step++) {
+        case 0: std::memcpy(bytes, "abc", 3); return 3;
+        case 1: return -2;
+        case 2: std::memcpy(bytes, "\r\n", 2); return 2;
+        default: return 0;
+      }
+    });
+  });
+  server.on("/stream-error", HTTP_GET, [&] {
+    server.sendStream(200, "text/csv", [](char *, size_t) { return -1; });
+  });
   server.on("/bad-header", HTTP_GET, [&] {
     const auto &request = server.request();
     server.sendHeader("Bad", "value\r\ninjection");
@@ -224,6 +239,23 @@ int main() {
   const auto &compressedResponse = sockets[compressed].outgoing;
   assert(compressedResponse.find("Content-Encoding: gzip\r\n") != std::string::npos);
   assert(compressedResponse.substr(compressedResponse.find("\r\n\r\n") + 4) == std::string(binary, sizeof(binary)));
+  int streamed = connectRequest(get("/stream"));
+  sockets[streamed].writeMax = 2; sockets[streamed].writeEINTR = true;
+  finish(server, streamed);
+  const auto &streamedResponse = sockets[streamed].outgoing;
+  assert(streamedResponse.find("Transfer-Encoding: chunked\r\n") != std::string::npos);
+  assert(streamedResponse.find("Content-Length:") == std::string::npos);
+  assert(streamedResponse.find("Content-Disposition: attachment; filename=history.csv\r\n") != std::string::npos);
+  assert(streamedResponse.substr(streamedResponse.find("\r\n\r\n") + 4) == "3\r\nabc\r\n2\r\n\r\n\r\n0\r\n\r\n");
+  int legacy = connectRequest("GET /stream HTTP/1.0\r\n\r\n");
+  finish(server, legacy);
+  const auto &legacyResponse = sockets[legacy].outgoing;
+  assert(legacyResponse.find("HTTP/1.0 200 OK\r\n") == 0);
+  assert(legacyResponse.find("Transfer-Encoding:") == std::string::npos);
+  assert(legacyResponse.substr(legacyResponse.find("\r\n\r\n") + 4) == "abc\r\n");
+  int failedStream = connectRequest(get("/stream-error")); finish(server, failedStream);
+  const auto &failedResponse = sockets[failedStream].outgoing;
+  assert(failedResponse.find("\r\n\r\n") + 4 == failedResponse.size()); // No terminating chunk on errors.
   int reused = connectRequest(get("/api/state")); finish(server, reused);
   assert(sockets[reused].outgoing.find("Content-Encoding") == std::string::npos);
   int invalidHeader = connectRequest(get("/bad-header")); finish(server, invalidHeader);

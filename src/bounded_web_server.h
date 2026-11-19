@@ -15,6 +15,8 @@ enum HTTPMethod { HTTP_GET, HTTP_POST };
 class BoundedWebServer {
  public:
   using Handler = std::function<void()>;
+  // Positive bytes produced, 0 at EOF, -1 on error, -2 to resume next poll.
+  using BodyReader = std::function<int(char *, size_t)>;
   static constexpr size_t CLIENT_LIMIT = 4;
   static constexpr size_t POLL_BYTE_BUDGET = 4096;
   static constexpr uint32_t REQUEST_TOTAL_MS = 5000, REQUEST_IDLE_MS = 1500;
@@ -31,6 +33,7 @@ class BoundedWebServer {
   void send(int code, const char *type = "text/plain", const String &body = String());
   void send_P(int code, const char *type, const char *body);
   void send_P(int code, const char *type, const char *body, size_t length);
+  void sendStream(int code, const char *type, BodyReader reader);
   void sendHeader(const char *name, const char *value);
   // Request access is valid only for the duration of the active route callback.
   const aqua::HttpRequest &request() const;
@@ -46,11 +49,18 @@ class BoundedWebServer {
  private:
   static constexpr size_t ROUTE_LIMIT = 32, RESPONSE_HEADER_LIMIT = 768, DYNAMIC_BODY_LIMIT = 8192;
   struct Header { String name; String value; };
+  struct Stream {
+    BodyReader read;
+    char chunk[512 + 16];
+    size_t length = 0, sent = 0;
+    bool last = false, chunked = true;
+  };
   struct Session {
     NetworkClient client;
     // Allocated only while receiving/dispatching; outgoing pages retain no
     // 7KB input buffer, leaving room for TLS and the sensor/control tasks.
     std::unique_ptr<aqua::HttpRequest> request;
+    std::unique_ptr<Stream> stream;
     bool active = false, responding = false, invalidHeaders = false;
     uint32_t started = 0, progress = 0;
     Header headers[8];
@@ -70,6 +80,7 @@ class BoundedWebServer {
   void close(Session &session);
   void receive(Session &session, size_t &budget);
   void transmit(Session &session, size_t &budget);
+  void transmitStream(Session &session, size_t &budget, size_t quota);
   void dispatch(size_t index);
   void respond(Session &session, int code, const char *type, const char *body, size_t length);
   void error(Session &session, int code);

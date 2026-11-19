@@ -52,6 +52,7 @@ html[data-channels="1"]{--warm:#f3ba72}html[data-channels="1"] .graphlegend,html
     <div class="sensor" id="temperatureCard"><div class="sensor-label"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M7 11.5V5a3 3 0 0 1 6 0v6.5a5 5 0 1 1-6 0Z"/><path d="M10 7v7" stroke-linecap="round"/></svg>Hőmérséklet</div><div class="sensor-value"><span id="temperature">—</span><small>°C</small></div><div class="sensor-note" id="temperatureNote">Várakozás a mérésre</div></div>
     <div class="sensor" id="humidityCard"><div class="sensor-label"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M10 2S4 8.5 4 12a6 6 0 0 0 12 0c0-3.5-6-10-6-10Z"/><path d="M7 12a3 3 0 0 0 3 3" stroke-linecap="round"/></svg>Páratartalom</div><div class="sensor-value"><span id="humidity">—</span><small>%</small></div><div class="sensor-note" id="humidityNote">Várakozás a mérésre</div></div>
   </section>
+  <p class="subtle" id="sensorHistory" hidden><a href="/api/sensor-history.csv" download>Utolsó 48 óra mérései (CSV)</a></p>
   <div class="notices" aria-live="polite"><div id="staleNotice" class="notice" hidden></div><div id="offlineNotice" class="notice danger" hidden>Az eszköz nem elérhető. Újrapróbálkozás folyamatban; a kijelzett értékek nem frissek.</div><div id="pwmNotice" class="notice danger" hidden>A fénykimenetek hibát jeleznek. A vezérlő kikapcsolta a világítást.</div><div id="storageNotice" class="notice danger" hidden>A beállítások mentése nem sikerült. Újraindításkor a módosítások elveszhetnek.</div><div id="clockNotice" class="notice" hidden>Az automata program pontos időre vár, addig a fények kikapcsolva maradnak. <button id="quickClock">Óra beállítása</button></div></div>
   <nav class="modebar" aria-label="Világítási mód">
     <button type="button" class="modebtn" data-mode="auto" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 5.5V10l3 2" stroke-linecap="round"/></svg>Program indítása</button>
@@ -104,6 +105,7 @@ const viewChannels = viewQuery.get('channels');
 const invalidPeerView = peerTarget && viewChannels !== '1' && viewChannels !== '2';
 const single = peerTarget && !invalidPeerView ? viewChannels === '1' : document.documentElement.dataset.channels === '1';
 document.documentElement.dataset.channels = single ? '1' : '2';
+$('sensorHistory').hidden = bleMode || peerTarget || single;
 const deviceName = single ? 'led-szallag' : 'terrárium';
 const names = single ? {warm: 'Világítás', cool: 'Világítás'} : {warm: 'Teljes spektrumú', cool: 'Hideg fehér'};
 const channelDetails = single ? {warm: '1 csatorna', cool: '1 csatorna'} : {warm: 'Kék + piros', cool: '6500 K'};

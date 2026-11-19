@@ -541,6 +541,7 @@ async function bleModeUiTest() {
   assert.equal(adapter.connects, 0); assert.equal(view.run('online'), false);
   assert.equal(view.nodes.get('manualEnable').disabled, true); assert.equal(view.nodes.get('saveProgram').disabled, true);
   assert.equal(view.nodes.get('bleConnectionPanel').hidden, false);
+  assert.equal(view.nodes.get('sensorHistory').hidden, true);
   for (const id of ['networkSettings', 'firmwareUpdateSection', 'localAccessSection', 'meshSection']) assert.equal(view.nodes.get(id).hidden, true);
   assert.equal(view.nodes.get('temperature').textContent, '—');
   await view.run('connectBle()');
@@ -649,6 +650,7 @@ async function meshUiTest() {
   }
 
   const master = meshView(1, '?target=peer&channels=2', 'master'); await flush(); await flush();
+  assert.equal(master.nodes.get('sensorHistory').hidden, true);
   assert.equal(master.nodes.get('localOtaAddress').textContent, 'led-control.local:3232');
   master.model.data.timeSource = 'mesh'; await master.run('refresh()');
   assert.match(master.nodes.get('timeInfo').textContent, /másik vezérlőtől kapott időből jár/);
@@ -660,6 +662,7 @@ async function meshUiTest() {
   // Local operation does not depend on the other panel's online state.
   const local = meshView(2, '?channels=1', 'master'); await flush(); await flush();
   assert.equal(local.run('single'), false); assert.equal(local.calls[0].route, '/api/state');
+  assert.equal(local.nodes.get('sensorHistory').hidden, false);
   local.model.data.mesh.peerOnline = false; await local.run('refresh()');
   await local.run("changeMode('manual')"); assert.equal(local.model.data.mode, 'manual');
   assert.equal(local.nodes.get('maintenanceApAction').hidden, true);

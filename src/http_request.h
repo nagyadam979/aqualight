@@ -20,7 +20,7 @@ class HttpRequest {
   void reset() {
     std::memset(buffer_, 0, sizeof(buffer_));
     used_ = headerBytes_ = contentLength_ = argCount_ = headerCount_ = 0;
-    error_ = 0; complete_ = false; method_ = Method::Get; path_ = nullptr;
+    error_ = 0; complete_ = http11_ = false; method_ = Method::Get; path_ = nullptr;
   }
 
   size_t feed(const uint8_t *data, size_t length) {
@@ -48,6 +48,7 @@ class HttpRequest {
 
   bool complete() const { return complete_; }
   int errorStatus() const { return error_; }
+  bool http11() const { return http11_; }
   Method method() const { return method_; }
   const char *path() const { return path_ ? path_ : ""; }
   const char *header(const char *name) const {
@@ -83,7 +84,7 @@ class HttpRequest {
   Field arguments_[ARG_LIMIT];
   size_t used_ = 0, headerBytes_ = 0, contentLength_ = 0, argCount_ = 0, headerCount_ = 0;
   int error_ = 0;
-  bool complete_ = false;
+  bool complete_ = false, http11_ = false;
   Method method_ = Method::Get;
   char *path_ = nullptr;
 
@@ -143,7 +144,8 @@ class HttpRequest {
     if (std::strcmp(buffer_, "GET") == 0) method_ = Method::Get;
     else if (std::strcmp(buffer_, "POST") == 0) method_ = Method::Post;
     else return fail(405);
-    if (std::strcmp(version, "HTTP/1.1") != 0 && std::strcmp(version, "HTTP/1.0") != 0) return fail(400);
+    http11_ = std::strcmp(version, "HTTP/1.1") == 0;
+    if (!http11_ && std::strcmp(version, "HTTP/1.0") != 0) return fail(400);
     if (std::strlen(uri) > URI_LIMIT) return fail(414);
     if (*uri != '/') return fail(400);
     for (const unsigned char *p = reinterpret_cast<unsigned char *>(uri); *p; ++p)
@@ -187,7 +189,7 @@ class HttpRequest {
       headers_[headerCount_++] = {line, value};
       line = end + 2;
     }
-    if (std::strcmp(version, "HTTP/1.1") == 0 && !haveHost) return fail(400);
+    if (http11_ && !haveHost) return fail(400);
     if (method_ == Method::Get && contentLength_) return fail(400);
     return true;
   }
