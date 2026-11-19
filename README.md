@@ -1,5 +1,7 @@
 # AquaLight
 
+Az új, kétboardos rendszer fejlesztői átadása a [kommunikációs és megvalósítási tervben](KOMMUNIKACIOS_TERV.md) található. A tervhez tartozó szoftveres modellek együtt futtathatók a `python3 -B tools/communication_model/run_checks.py` paranccsal.
+
 ESP32-C3 SuperMini terráriumvilágítás teljes spektrumú (lila, kék + piros) és hideg fehér LED-szalaggal és AHT20-szenzorral. A teljes webes felület és a világításvezérlés az ESP-n található, külső JavaScript nélkül. Az opcionális, aláírt firmware-frissítés külön Firebase-csatornát használ; a világítás internet és felhő nélkül is működik.
 
 ## A terrárium fővezérlője
