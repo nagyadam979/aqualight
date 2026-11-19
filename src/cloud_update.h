@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 namespace ledota {
-void begin();
+void begin(bool enableCloud = true);
 bool requestCheck();
 void poll(bool applicationHealthy, bool canReboot);
 String stateJson();

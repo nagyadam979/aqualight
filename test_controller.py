@@ -242,6 +242,7 @@ NETWORK_STUBS = r'''
 #include "schedule.h"
 #include "wifi_recovery.h"
 namespace network_test {
+constexpr bool MASTER=true;
 enum wifi_power_t { WIFI_POWER_8_5dBm=34 };
 constexpr int WL_DISCONNECTED=0,WL_CONNECTED=1;
 bool wasConnected=false,wifiPending=false,staAttemptActive=false,staConfigDisconnecting=false;
@@ -481,7 +482,7 @@ power_start = source.index("#ifndef LED_WIFI_TX_POWER")
 power_macro = source[power_start:source.index("#endif", power_start) + len("#endif")]
 network_helpers = source[source.index("void applyWifiPower()"):source.index("\nvoid startNetwork()")]
 network_update = source[source.index("void updateNetwork(uint32_t now)"):source.index("\nvoid initializeClock(")]
-recovery_helpers = source[source.index("void initializeClock("):source.index("\nbool startSensor()") ]
+recovery_helpers = source[source.index("void initializeClock("):source.index("\nvoid captureSensorErrorLines()") ]
 network_code = (NETWORK_STUBS + network_constants + "\n" + power_macro +
                 "\nuint32_t staNextRetryDelay=STA_RETRY_MIN_MS;\n" + network_helpers + network_update + recovery_helpers + NETWORK_CHECKS)
 assert "WiFi.setAutoReconnect(false)" in source

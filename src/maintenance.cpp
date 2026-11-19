@@ -11,7 +11,7 @@
 #include "cloud_update.h"
 
 #ifndef LED_CONTROL_VERSION
-#define LED_CONTROL_VERSION "1.2.5"
+#define LED_CONTROL_VERSION "1.3.2"
 #endif
 
 namespace maintenance {
@@ -19,7 +19,7 @@ namespace {
 constexpr uint32_t TX_TIMEOUT_MS = 5000;
 constexpr uint32_t IDLE_TIMEOUT_MS = 300000;
 constexpr uint32_t AUTH_COOLDOWN_MS = 30000;
-constexpr std::size_t TX_CAPACITY = 1536;
+constexpr std::size_t TX_CAPACITY = 3072;
 NetworkServer telnet(23, 1);
 NetworkClient client;
 LineReader reader;

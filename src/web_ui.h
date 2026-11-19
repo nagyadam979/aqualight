@@ -46,12 +46,13 @@ html[data-channels="1"]{--warm:#f3ba72}html[data-channels="1"] .graphlegend,html
     <div class="brand"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 30 30" fill="none"><path d="M7 14a8 8 0 0 1 16 0" stroke="#f3ba72" stroke-width="1.7"/><path d="M4 19c4-4 7 4 11 0s7 4 11 0M7 24c3-3 5 3 8 0s5 3 8 0" stroke="#81cdec" stroke-width="1.7" stroke-linecap="round"/></svg></span>AquaLight</div>
     <div class="topright"><span id="connection" class="connection" role="status"><span class="dot"></span><span id="connectionText">Kapcsolódás</span></span><button class="iconbtn" id="settingsShortcut" aria-label="Beállítások megnyitása" title="Beállítások"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" stroke-linecap="round"/></svg></button></div>
   </header>
+  <section id="bleConnectionPanel" class="panel" aria-label="Bluetooth-kapcsolat" hidden><div class="panelhead"><h2>Bluetooth-kapcsolat</h2></div><p id="bleStatus" role="status">A méréshez és vezérléshez csatlakozz a terráriumhoz.</p><div class="programactions"><button type="button" class="btn primary" id="bleConnect">Csatlakozás</button><button type="button" class="btn" id="bleDisconnect" disabled>Kapcsolat bontása</button></div><p class="subtle">Android Chrome szükséges. Párosításkor az Android rendszerablakába írd a vezérlő külön megadott PIN-kódját. A PIN-t ez az oldal nem kéri és nem tárolja.</p><p id="bleOfflineReady" class="subtle">Az offline felület előkészítése folyamatban.</p></section>
   <div class="heading"><div><p class="eyebrow">A fény napi ritmusa</p><h1 id="deviceName">)AQUAHTML" LED_UI_DEVICE_NAME R"AQUAHTML(</h1></div><div class="clockblock"><div id="clock" class="clock">--:--</div><div id="clockLabel" class="clocklabel">Az eszköz ideje</div></div></div>
   <section class="sensors" aria-label="Élő mérések">
     <div class="sensor" id="temperatureCard"><div class="sensor-label"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M7 11.5V5a3 3 0 0 1 6 0v6.5a5 5 0 1 1-6 0Z"/><path d="M10 7v7" stroke-linecap="round"/></svg>Hőmérséklet</div><div class="sensor-value"><span id="temperature">—</span><small>°C</small></div><div class="sensor-note" id="temperatureNote">Várakozás a mérésre</div></div>
     <div class="sensor" id="humidityCard"><div class="sensor-label"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M10 2S4 8.5 4 12a6 6 0 0 0 12 0c0-3.5-6-10-6-10Z"/><path d="M7 12a3 3 0 0 0 3 3" stroke-linecap="round"/></svg>Páratartalom</div><div class="sensor-value"><span id="humidity">—</span><small>%</small></div><div class="sensor-note" id="humidityNote">Várakozás a mérésre</div></div>
   </section>
-  <div class="notices" aria-live="polite"><div id="offlineNotice" class="notice danger" hidden>Az eszköz nem elérhető. Újrapróbálkozás folyamatban; a kijelzett értékek nem frissek.</div><div id="pwmNotice" class="notice danger" hidden>A fénykimenetek hibát jeleznek. A vezérlő kikapcsolta a világítást.</div><div id="storageNotice" class="notice danger" hidden>A beállítások mentése nem sikerült. Újraindításkor a módosítások elveszhetnek.</div><div id="clockNotice" class="notice" hidden>Az automata program pontos időre vár, addig a fények kikapcsolva maradnak. <button id="quickClock">Óra beállítása</button></div></div>
+  <div class="notices" aria-live="polite"><div id="staleNotice" class="notice" hidden></div><div id="offlineNotice" class="notice danger" hidden>Az eszköz nem elérhető. Újrapróbálkozás folyamatban; a kijelzett értékek nem frissek.</div><div id="pwmNotice" class="notice danger" hidden>A fénykimenetek hibát jeleznek. A vezérlő kikapcsolta a világítást.</div><div id="storageNotice" class="notice danger" hidden>A beállítások mentése nem sikerült. Újraindításkor a módosítások elveszhetnek.</div><div id="clockNotice" class="notice" hidden>Az automata program pontos időre vár, addig a fények kikapcsolva maradnak. <button id="quickClock">Óra beállítása</button></div></div>
   <nav class="modebar" aria-label="Világítási mód">
     <button type="button" class="modebtn" data-mode="auto" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 5.5V10l3 2" stroke-linecap="round"/></svg>Program indítása</button>
     <button type="button" class="modebtn" data-mode="off" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="M10 2v8M6 4.5a7 7 0 1 0 8 0" stroke-linecap="round"/></svg>Ki</button>
@@ -81,11 +82,13 @@ html[data-channels="1"]{--warm:#f3ba72}html[data-channels="1"] .graphlegend,html
   </div></details>
   <details id="settings" class="settings"><summary>Hálózat és időbeállítás<svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="m5 8 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="settingsbody">
     <section class="settingsection"><h3>A vezérlő órája</h3><p id="timeInfo">Automatikus internetes időszinkron Wi-Fi-kapcsolaton. Magyar téli–nyári időszámítás.</p><button type="button" class="btn" id="syncClock">Beállítás erről az eszközről</button><p>Teljes áramtalanítás után a program az idő újrabeállításáig várakozik. Kézi módban ilyenkor is szabályozhatsz.</p></section>
-    <section class="settingsection"><h3>Wi-Fi-kapcsolat</h3><dl class="networkinfo"><dt>Otthoni hálózat</dt><dd id="wifiStatus">Betöltés…</dd><dt>Webcím</dt><dd id="wifiAddress">—</dd><dt>Saját hálózat</dt><dd id="apName">—</dd><dt>Közvetlen cím</dt><dd id="apAddress">192.168.4.1</dd></dl><form id="wifiForm" class="wifiform"><label class="field" for="wifiSsid">Hálózat neve<input id="wifiSsid" name="ssid" maxlength="32" autocomplete="off" required placeholder="Wi-Fi neve"></label><label class="field" for="wifiPassword">Hálózati jelszó<input id="wifiPassword" name="password" type="password" maxlength="63" autocomplete="new-password" placeholder="Wi-Fi-jelszó"></label><button type="submit" class="btn" id="saveWifi">Mentés és csatlakozás</button></form><p>A vezérlő saját Wi-Fi-hálózata akkor is elérhető marad, ha az otthoni csatlakozás nem sikerül. A saját hálózat jelszavát nem módosítja ez az űrlap.</p></section>
+    <section class="settingsection" id="networkSettings"><h3>Wi-Fi-kapcsolat</h3><dl class="networkinfo"><dt>Otthoni hálózat</dt><dd id="wifiStatus">Betöltés…</dd><dt>Webcím</dt><dd id="wifiAddress">—</dd><dt>Saját hálózat</dt><dd id="apName">—</dd><dt>Közvetlen cím</dt><dd id="apAddress">192.168.4.1</dd></dl><form id="wifiForm" class="wifiform"><label class="field" for="wifiSsid">Hálózat neve<input id="wifiSsid" name="ssid" maxlength="32" autocomplete="off" required placeholder="Wi-Fi neve"></label><label class="field" for="wifiPassword">Hálózati jelszó<input id="wifiPassword" name="password" type="password" maxlength="63" autocomplete="new-password" placeholder="Wi-Fi-jelszó"></label><button type="submit" class="btn" id="saveWifi">Mentés és csatlakozás</button></form><p id="wifiHelp">Az otthoni hálózat beállításai a fővezérlőhöz kerülnek.</p></section>
   </div></details>
   <details id="diagnostics" class="settings"><summary>Frissítés és diagnosztika<svg viewBox="0 0 20 20" fill="none" stroke-width="1.5"><path d="m5 8 5 5 5-5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="settingsbody">
-    <section class="settingsection"><h3>Firmware-frissítés</h3><dl class="networkinfo"><dt>Futó verzió</dt><dd id="firmwareVersion">—</dd><dt id="availableVersionLabel" hidden>Elérhető verzió</dt><dd id="availableVersion" hidden>—</dd><dt>Állapot</dt><dd id="updateStatus" aria-live="polite">Frissítési adatok betöltése…</dd><dt>Utolsó ellenőrzés</dt><dd id="lastUpdateCheck">—</dd></dl><div id="updateProgressRow" class="updateprogress" hidden><progress id="updateProgress" max="100" value="0" aria-label="Firmware letöltésének állása"></progress><span id="updatePercent">0%</span></div><p id="updateDetail" class="updatedetail" aria-live="polite" hidden></p><button type="button" class="btn" id="checkUpdate" disabled>Frissítés keresése</button></section>
-    <section class="settingsection"><h3>Helyi elérés</h3><dl class="networkinfo"><dt>LAN OTA</dt><dd><code>)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:3232</code><span id="localOtaStatus" class="localstatus">Állapot nem közölt</span></dd><dt>Telnet</dt><dd><code>)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:23</code><span id="telnetStatus" class="localstatus">Állapot nem közölt</span></dd></dl><p>Mindkét helyi szolgáltatás jelszava a vezérlő saját Wi-Fi-hálózatának jelszava.</p></section>
+    <section class="settingsection" id="meshSection"><h3>Vezérlők közötti kapcsolat</h3><dl id="meshData" class="networkinfo" hidden><dt>Szerep</dt><dd id="meshRole">—</dd><dt>Másik vezérlő</dt><dd id="meshLink">—</dd><dt>Utolsó állapot</dt><dd id="meshPeerAge">—</dd><dt>Rádiócsatorna</dt><dd id="meshChannel">—</dd><dt>Közvetlen rádió</dt><dd id="meshReady">—</dd><dt>Elhagyott üzenetek</dt><dd id="meshDropped">—</dd></dl></section>
+    <section class="settingsection"><h3>Működési diagnosztika</h3><p id="diagnosticNotice">Diagnosztikai adatok betöltése…</p><dl id="diagnosticData" class="networkinfo" hidden><dt>Szenzor</dt><dd id="diagnosticSensor">—</dd><dt>Első hiba</dt><dd id="diagnosticFirstError">—</dd><dt>Utolsó hiba</dt><dd id="diagnosticLastError">—</dd><dt>Mérések</dt><dd id="diagnosticReads">—</dd><dt>Inicializálás</dt><dd id="diagnosticInits">—</dd><dt>I²C-vonalak</dt><dd id="diagnosticBus">—</dd><dt>I²C-címpróba</dt><dd id="diagnosticProbe">—</dd><dt>Mérési idő</dt><dd id="diagnosticReadTiming">—</dd><dt>Indítási idő</dt><dd id="diagnosticInitTiming">—</dd><dt>LED vezérlés</dt><dd id="diagnosticControl">—</dd><dt>Főciklus</dt><dd id="diagnosticLoop">—</dd><dt>Webkiszolgálás</dt><dd id="diagnosticHttp">—</dd><dt>Szabad memória</dt><dd id="diagnosticHeap">—</dd><dt>Újraindítás oka</dt><dd id="diagnosticReset">—</dd></dl></section>
+    <section class="settingsection" id="firmwareUpdateSection"><h3>Firmware-frissítés</h3><dl class="networkinfo"><dt>Futó verzió</dt><dd id="firmwareVersion">—</dd><dt id="availableVersionLabel" hidden>Elérhető verzió</dt><dd id="availableVersion" hidden>—</dd><dt>Állapot</dt><dd id="updateStatus" aria-live="polite">Frissítési adatok betöltése…</dd><dt>Utolsó ellenőrzés</dt><dd id="lastUpdateCheck">—</dd></dl><div id="updateProgressRow" class="updateprogress" hidden><progress id="updateProgress" max="100" value="0" aria-label="Firmware letöltésének állása"></progress><span id="updatePercent">0%</span></div><p id="updateDetail" class="updatedetail" aria-live="polite" hidden></p><button type="button" class="btn" id="checkUpdate" disabled>Frissítés keresése</button></section>
+    <section class="settingsection" id="localAccessSection"><h3>Helyi elérés</h3><div id="maintenanceApAction" hidden><p>A led-szallag saját hotspotján helyi firmware-frissítés végezhető. A hotspot normál üzemben nem fut.</p><button type="button" class="btn" id="startMaintenanceAp" disabled>Karbantartási hotspot indítása</button></div><dl class="networkinfo"><dt>LAN OTA</dt><dd><code id="localOtaAddress">)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:3232</code><span id="localOtaStatus" class="localstatus">Állapot nem közölt</span></dd><dt>Telnet</dt><dd><code id="telnetAddress">)AQUAHTML" LED_HOSTNAME R"AQUAHTML(.local:23</code><span id="telnetStatus" class="localstatus">Állapot nem közölt</span></dd></dl><p>Mindkét helyi szolgáltatás jelszava a vezérlő saját Wi-Fi-hálózatának jelszava.</p></section>
   </div></details>
   <footer class="footer">terrárium · teljes spektrumú és hideg fehér fény</footer>
 </main>
@@ -94,7 +97,13 @@ html[data-channels="1"]{--warm:#f3ba72}html[data-channels="1"] .graphlegend,html
 
 'use strict';
 const $ = id => document.getElementById(id);
-const single = document.documentElement.dataset.channels === '1';
+const bleMode = window.AQUA_BLE_MODE === true;
+const viewQuery = new URLSearchParams(window.location && window.location.search || '');
+const peerTarget = !bleMode && viewQuery.get('target') === 'peer';
+const viewChannels = viewQuery.get('channels');
+const invalidPeerView = peerTarget && viewChannels !== '1' && viewChannels !== '2';
+const single = peerTarget && !invalidPeerView ? viewChannels === '1' : document.documentElement.dataset.channels === '1';
+document.documentElement.dataset.channels = single ? '1' : '2';
 const deviceName = single ? 'led-szallag' : 'terrárium';
 const names = single ? {warm: 'Világítás', cool: 'Világítás'} : {warm: 'Teljes spektrumú', cool: 'Hideg fehér'};
 const channelDetails = single ? {warm: '1 csatorna', cool: '1 csatorna'} : {warm: 'Kék + piros', cool: '6500 K'};
@@ -108,7 +117,8 @@ let activeCurve = 'warm', selected = {warm: null, cool: null}, geometry = null;
 let drag = null, tapCandidate = null, lastTap = null, suppressDoubleUntil = 0;
 let writeChain = Promise.resolve(), manualTimer, manualQueued = null, manualSending = false;
 let manualEditing = false, manualGuardUntil = 0, modePending = 0, modeTarget = null, controlRevision = 0;
-let updateCheckPending = false, graphMoveEnabled = false;
+let updateCheckPending = false, maintenanceApPending = false, graphMoveEnabled = false;
+let bleSessionRevision = 0, bleConnecting = false;
 const undoHistory = []; // At most 40 local edits; never writes to the controller.
 const updateBusyStates = new Set(['checking', 'downloading', 'ready', 'rebooting', 'pending_validation']);
 const updateLabels = {
@@ -131,31 +141,112 @@ function notify(message, error = false) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 4200);
 }
 
+function apiPath(path) {
+  // Router settings always belong to the master, also from the slave panel.
+  if (path === '/api/wifi' && peerTarget && latest && latest.mesh && latest.mesh.role === 'slave') return path;
+  return peerTarget && path.startsWith('/api/') && !path.startsWith('/api/peer/') ? '/api/peer/' + path.slice(5) : path;
+}
 async function request(path, data) {
-  const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 6500);
-  try {
-    const options = {signal: abort.signal, cache: 'no-store'};
-    if (data !== undefined) {
-      options.method = 'POST';
-      options.headers = {'Content-Type': 'application/x-www-form-urlencoded', 'X-Aqua-Request': '1'};
-      options.body = new URLSearchParams(data).toString();
-    }
-    const response = await fetch(path, options);
+  if (invalidPeerView) throw new Error('Érvénytelen vezérlőhivatkozás. Nyisd meg újra a közös kezdőoldalt.');
+  if (data !== undefined && !online) throw new Error('A vezérlő nem elérhető. A módosítás nem került elküldésre.');
+  if (bleMode) {
+    const result = await window.AquaBleTransport.request(path, data);
+    if (path === '/api/state' && data === undefined && (!result || !['off', 'manual', 'auto'].includes(result.mode) || typeof result.pwmOk !== 'boolean' || !validSchedule(result.schedule)))
+      throw new Error('A vezérlő állapotválasza hiányos. A vezérlés még nem érhető el.');
+    return result;
+  }
+  const abort = new AbortController(), started = Date.now();
+  const timer = setTimeout(() => abort.abort(), data === undefined ? 6500 : 5000);
+  const fetchResult = async (url, options) => {
+    const response = await fetch(url, {...options, signal: abort.signal, cache: 'no-store'});
     let result;
     try { result = await response.json(); }
     catch { throw new Error('Az eszköz válasza nem olvasható.'); }
     if (!response.ok || result.ok === false) throw new Error(result.error || 'A művelet nem sikerült.');
     return result;
+  };
+  try {
+    const options = {};
+    if (data !== undefined) {
+      options.method = 'POST';
+      options.headers = {'Content-Type': 'application/x-www-form-urlencoded', 'X-Aqua-Request': '1'};
+      options.body = new URLSearchParams(data).toString();
+    }
+    let result = await fetchResult(apiPath(path), options);
+    if (data !== undefined && result.pending === true) {
+      const commandId = result.commandId;
+      if (!Number.isSafeInteger(commandId) || commandId < 1 || commandId > 4294967295) throw new Error('A vezérlő parancsazonosítója érvénytelen.');
+      while (Date.now() - started < 5000) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        if (Date.now() - started >= 5000) break;
+        result = await fetchResult('/api/peer/command?id=' + commandId, {});
+        if (result.commandId !== commandId) throw new Error('A vezérlő másik parancs visszaigazolását küldte.');
+        if (result.status === 'applied' && (!finite(result.httpStatus) || result.httpStatus < 400)) return result;
+        if (result.status === 'error' || result.status === 'timeout' || finite(result.httpStatus) && result.httpStatus >= 400)
+          throw new Error(result.error || 'A másik vezérlő nem hajtotta végre a parancsot.');
+        if (result.status !== 'pending' && result.pending !== true) throw new Error('A parancs visszaigazolása nem értelmezhető.');
+      }
+      throw new Error('A másik vezérlő nem igazolta vissza időben a parancsot. Ellenőrizd az állapotát.');
+    }
+    return result;
   } catch (error) {
-    if (error.name === 'AbortError') throw new Error('A vezérlő nem válaszolt időben.');
+    if (error.name === 'AbortError') throw new Error('A vezérlő nem válaszolt időben. A végrehajtás még nem igazolt.');
     throw error;
   } finally { clearTimeout(timer); }
 }
 
 function mutate(path, data, allowed = null) {
-  const task = writeChain.catch(() => {}).then(() => !allowed || allowed() ? request(path, data) : null);
+  const session = bleSessionRevision;
+  const task = writeChain.catch(() => {}).then(() => {
+    if (bleMode && session !== bleSessionRevision) throw new Error('A kapcsolat megváltozott. A korábbi parancsot nem küldjük újra.');
+    return !allowed || allowed() ? request(path, data) : null;
+  });
   writeChain = task.catch(() => {});
   return task;
+}
+async function connectBle() {
+  if (!bleMode || bleConnecting || window.AquaBleTransport.connected) return;
+  const session = ++bleSessionRevision;
+  bleConnecting = true; text('bleStatus', 'Vezérlő kiválasztása és párosítás…'); updateControls();
+  try {
+    const info = await window.AquaBleTransport.connect();
+    if (session !== bleSessionRevision) return;
+    if (info.channels !== 2 || single) { window.AquaBleTransport.disconnect(); text('bleStatus', 'Ez a Bluetooth-próba a kétcsatornás terráriumhoz készült.'); return; }
+    const state = await refresh(true);
+    if (session !== bleSessionRevision) return;
+    if (!state) throw new Error('A kapcsolat létrejött, de az állapot lekérése még nem sikerült.');
+    text('bleStatus', 'Kapcsolódva · óra beállítása a telefonról…');
+    try {
+      await mutate('/api/time', {epoch: String(Math.floor(Date.now() / 1000))});
+      if (session !== bleSessionRevision) return;
+      text('bleStatus', 'Kapcsolódva · az órát a telefon idejére állítottuk.');
+      await refresh(true);
+    } catch (error) { if (session === bleSessionRevision) text('bleStatus', 'Kapcsolódva · az óra beállítása nem sikerült: ' + error.message); }
+  } catch (error) { if (session === bleSessionRevision) { text('bleStatus', error.message); connection(false); } }
+  finally { if (session === bleSessionRevision) bleConnecting = false; updateControls(); }
+}
+function setupBle() {
+  $('bleConnectionPanel').hidden = !bleMode;
+  if (!bleMode) return;
+  document.documentElement.dataset.transport = 'ble';
+  text('timeInfo', 'Csatlakozás után az órát a telefon idejére állítjuk. Később az alábbi gombbal újra szinkronizálhatod.');
+  for (const id of ['networkSettings', 'firmwareUpdateSection', 'localAccessSection', 'meshSection']) $(id).hidden = true;
+  if (!window.AquaBleTransport || !window.AquaBleTransport.supported) {
+    text('bleStatus', 'A Bluetooth-kezeléshez Android Chrome és HTTPS-en megnyitott oldal szükséges.');
+    $('bleConnect').disabled = true;
+    return;
+  }
+  window.AquaBleTransport.addEventListener('state', event => {
+    if (event.detail.state === 'disconnected' || event.detail.state === 'error') {
+      ++bleSessionRevision; ++controlRevision; bleConnecting = false;
+      clearTimeout(manualTimer); manualQueued = null; manualEditing = false;
+      connection(false);
+      text('bleStatus', event.detail.error || 'A Bluetooth-kapcsolat megszakadt. A szerkesztett program itt megmarad.');
+    }
+    updateControls();
+  });
+  $('bleConnect').addEventListener('click', connectBle);
+  $('bleDisconnect').addEventListener('click', () => window.AquaBleTransport.disconnect());
 }
 function canControlManually() {
   return online && latest && latest.mode === 'manual' && latest.pwmOk && modePending === 0;
@@ -167,6 +258,7 @@ function connection(isOnline) {
   text('connectionText', isOnline ? 'Kapcsolódva' : 'Nincs kapcsolat');
   $('offlineNotice').hidden = isOnline;
   if (!isOnline) {
+    if (bleMode) { text('temperature', '—'); text('humidity', '—'); text('actualWarm', '—'); text('actualCool', '—'); text('clock', '--:--'); }
     for (const item of ['temperature', 'humidity']) {
       text(item + 'Note', 'Nincs friss kapcsolat');
       $(item + 'Card').classList.add('invalid');
@@ -193,16 +285,66 @@ function updateControls() {
   $('saveProgram').disabled = !online || !dirty || saving || !!drag;
   $('syncClock').disabled = !online;
   $('quickClock').disabled = !online;
-  $('saveWifi').disabled = !online;
+  $('saveWifi').disabled = !online || !!(latest && latest.mesh && latest.mesh.role === 'slave' && latest.mesh.peerOnline === false);
   $('checkUpdate').disabled = !canCheckUpdate();
+  $('bleConnect').disabled = !bleMode || !window.AquaBleTransport || !window.AquaBleTransport.supported || bleConnecting || window.AquaBleTransport.connected;
+  $('bleDisconnect').disabled = !bleMode || !(window.AquaBleTransport && (window.AquaBleTransport.connected || bleConnecting));
+  $('startMaintenanceAp').disabled = !online || maintenanceApPending || !(latest && latest.mesh && latest.mesh.role === 'slave');
   $('removeSelected').disabled = !!drag || !selectedPoint() || draft[activeCurve].length <= 2;
   if (latest) text('modeBadge', modePending ? 'Módváltás…' : modeNames[latest.mode] || 'Ismeretlen mód');
 }
 
 function canCheckUpdate() {
   const update = latest && latest.update;
-  return online && !updateCheckPending && update && update.configured === true &&
+  return !bleMode && online && !(latest && latest.mesh && latest.mesh.role === 'slave') && !updateCheckPending && update && update.configured === true &&
     !updateBusyStates.has(update.state) && !(latest.maintenance && latest.maintenance.localOtaBusy);
+}
+function renderDiagnostics(state) {
+  const data = state.diagnostics;
+  const available = !!data && typeof data === 'object';
+  $('diagnosticData').hidden = !available;
+  text('diagnosticNotice', available ? 'Az adatok az utolsó újraindítás óta gyűlnek. A korábbi hiba sikeres mérés után is megmarad.' : 'Ehhez újabb diagnosztikai firmware szükséges.');
+  if (!available) return;
+  const sensor = data.sensor || {}, loop = data.loop || {}, http = data.http || {};
+  const count = value => finite(value) && value >= 0 ? String(Math.floor(value)) : '—';
+  const duration = value => count(value) + ' ms';
+  const statusLabels = ['Rendben', 'A szenzor foglalt', 'Nem érkezett I²C-visszaigazolás (ACK)', 'Hiányos mérési adat', 'CRC-ellenőrzési hiba'];
+  const statusText = (code, label) => code === 253 ? 'Inicializálási hiba' : code === 254 ? 'Érvénytelen mérési érték' :
+    Number.isInteger(code) && code >= 0 && code < statusLabels.length ? statusLabels[code] :
+    typeof label === 'string' && label ? label : 'Ismeretlen állapot';
+  const lineLevel = value => typeof value === 'boolean' ? (value ? 'magas' : 'alacsony') : '—';
+  text('diagnosticSensor', (sensor.ready === true ? 'Inicializálva' : sensor.ready === false ? 'Inicializálásra vár' : 'Állapot nem közölt') +
+    ' · ' + statusText(sensor.lastStatus, sensor.lastStatusText) + ' · kód: ' + count(sensor.lastStatus));
+  const errorText = prefix => {
+    const code = sensor[prefix + 'Status'], label = sensor[prefix + 'Text'];
+    const errorPhase = sensor[prefix + 'Phase'], age = sensor[prefix + 'AgeSec'];
+    if (code === undefined) return 'Állapot nem közölt';
+    if (code === null) return 'Még nem történt hiba';
+    const phase = errorPhase === 'init' ? 'inicializálás' : errorPhase === 'read' ? 'mérés' :
+      typeof errorPhase === 'string' ? errorPhase : 'ismeretlen művelet';
+    const sda = sensor[prefix + 'SdaHigh'], scl = sensor[prefix + 'SclHigh'];
+    return statusText(code, label) + ' · kód: ' + count(code) + ' · ' + phase +
+      (finite(age) && age >= 0 ? ' · ' + count(age) + ' mp ezelőtt' : '') +
+      (typeof sda === 'boolean' || typeof scl === 'boolean' ? ' · hiba után SDA: ' + lineLevel(sda) + ' / SCL: ' + lineLevel(scl) : '');
+  };
+  text('diagnosticFirstError', errorText('firstError'));
+  text('diagnosticLastError', errorText('lastError'));
+  text('diagnosticReads', count(sensor.readAttempts) + ' kísérlet · ' + count(sensor.readFailures) + ' hiba · ' + count(sensor.consecutiveFailures) + ' egymást követő hiba');
+  text('diagnosticInits', count(sensor.initAttempts) + ' kísérlet · ' + count(sensor.initFailures) + ' hiba');
+  text('diagnosticBus', 'SDA: ' + lineLevel(sensor.sdaHigh) + ' · SCL: ' + lineLevel(sensor.sclHigh) + ' · pillanatnyi szint');
+  const probe = sensor.lastInitProbeCode;
+  const probeText = probe === 0 ? 'Címválasz (ACK)' : probe === 2 ? 'Nincs címválasz (NACK)' :
+    probe === 5 ? 'Időtúllépés' : 'Egyéb buszállapot';
+  text('diagnosticProbe', probe === undefined ? 'Állapot nem közölt' : probe === null ? 'Még nem történt próba' :
+    probeText + ' · nyers kód: ' + count(probe) + ' · sikertelen inicializálás után');
+  text('diagnosticReadTiming', 'Utolsó: ' + duration(sensor.lastReadMs) + ' · maximum: ' + duration(sensor.maxReadMs));
+  text('diagnosticInitTiming', 'Utolsó: ' + duration(sensor.lastInitMs) + ' · maximum: ' + duration(sensor.maxInitMs));
+  const control = data.control;
+  text('diagnosticControl', control && typeof control === 'object' ? count(control.ticks) + ' frissítés · utolsó: ' + duration(control.lastAgeMs) + ' ezelőtt · legnagyobb szünet: ' + duration(control.maxGapMs) : 'Állapot nem közölt');
+  text('diagnosticLoop', 'Utolsó: ' + duration(loop.lastMs) + ' · maximum: ' + duration(loop.maxMs) + ' · 500 ms felett: ' + count(loop.slowCount));
+  text('diagnosticHttp', 'Utolsó: ' + duration(http.lastMs) + ' · maximum: ' + duration(http.maxMs) + ' · 500 ms felett: ' + count(http.slowCount));
+  text('diagnosticHeap', count(data.freeHeap) + ' B · minimum: ' + count(data.minFreeHeap) + ' B · legnagyobb blokk: ' + count(data.largestFreeBlock) + ' B');
+  text('diagnosticReset', typeof data.resetReason === 'string' && data.resetReason ? data.resetReason : '—');
 }
 function renderUpdate(state) {
   const update = state.update && typeof state.update === 'object' ? state.update : {};
@@ -215,7 +357,7 @@ function renderUpdate(state) {
   text('availableVersion', available || '—');
   const status = !state.update ? 'Az eszköz nem közölt frissítési állapotot.' : update.configured !== true ?
     'A felhős frissítés nem érhető el.' : Object.prototype.hasOwnProperty.call(updateLabels, update.state) ? updateLabels[update.state] : 'A frissítési állapot nem ismert.';
-  text('updateStatus', updateCheckPending ? 'Ellenőrzés indítása…' : status);
+  text('updateStatus', state.mesh && state.mesh.role === 'slave' ? 'Az automatikus internetes frissítés ezen a vezérlőn nem érhető el. Helyi frissítés szükséges.' : updateCheckPending ? 'Ellenőrzés indítása…' : status);
   let lastCheck = update.last_check === 0 ? 'Még nem történt ellenőrzés' : '—';
   if (finite(update.last_check) && update.last_check > 0) {
     const date = new Date(update.last_check * 1000);
@@ -236,7 +378,24 @@ function renderUpdate(state) {
   text('updateDetail', detail);
   text('localOtaStatus', maintenance.localOtaBusy ? 'Helyi frissítés folyamatban' :
     typeof maintenance.localOtaReady === 'boolean' ? (maintenance.localOtaReady ? 'Elérhető' : 'Nem elérhető') : 'Állapot nem közölt');
+  if (peerTarget) {
+    const hostname = single ? 'led-control-1ch' : 'led-control';
+    text('localOtaAddress', hostname + '.local:3232');
+    text('telnetAddress', hostname + '.local:23');
+  }
+  $('maintenanceApAction').hidden = !(state.mesh && state.mesh.role === 'slave');
   text('telnetStatus', typeof maintenance.telnetReady === 'boolean' ? (maintenance.telnetReady ? 'Elérhető' : 'Nem elérhető') : 'Állapot nem közölt');
+}
+async function startMaintenanceAp() {
+  if (!online || maintenanceApPending || !(latest && latest.mesh && latest.mesh.role === 'slave')) return;
+  maintenanceApPending = true;
+  text('startMaintenanceAp', 'Hotspot indítása…'); updateControls();
+  try {
+    await mutate('/api/maintenance/ap', {});
+    notify('A vezérlő visszaigazolta a karbantartási hotspot indítását. Aktív használat nélkül 10 percig marad elérhető.');
+    await refresh(true);
+  } catch (error) { notify(error.message, true); }
+  finally { maintenanceApPending = false; text('startMaintenanceAp', 'Karbantartási hotspot indítása'); updateControls(); }
 }
 async function checkForUpdate() {
   if (!canCheckUpdate()) return;
@@ -288,23 +447,33 @@ function toDraft(points) {
 }
 
 function render(state) {
+  if (peerTarget && Number.isInteger(state.channels) && state.channels !== (single ? 1 : 2))
+    throw new Error('A hivatkozás másik vezérlőhöz tartozik. Nyisd meg újra a közös kezdőoldalt.');
   latest = state;
-  connection(true);
-  const sensorValid = state.sensorOk && finite(state.temperature) && finite(state.humidity) && finite(state.sensorAgeSec) && state.sensorAgeSec <= 15;
+  const transport = state.transport || {};
+  const remote = peerTarget || transport.remote === true;
+  const age = finite(transport.ageSec) && transport.ageSec >= 0 ? transport.ageSec : 0;
+  const available = !remote || transport.online !== false && age <= 30;
+  const stale = remote && age > 15;
+  connection(available);
+  $('staleNotice').hidden = !stale || !available;
+  text('staleNotice', 'A másik vezérlő korábbi állapota látszik · ' + Math.floor(age) + ' mp. Friss adatot várunk.');
+  if (available && stale) text('connectionText', 'Korábbi állapot');
+  const sensorValid = available && !stale && state.sensorOk && finite(state.temperature) && finite(state.humidity) && finite(state.sensorAgeSec) && state.sensorAgeSec <= 15;
   for (const item of ['temperature', 'humidity']) {
     $(item + 'Card').classList.toggle('invalid', !sensorValid);
     text(item, sensorValid ? formatter.format(state[item]) : '—');
-    text(item + 'Note', sensorValid ? 'Élő mérés · ' + Math.floor(state.sensorAgeSec) + ' mp' : 'A szenzor nem ad friss mérést');
+    text(item + 'Note', !available ? 'A másik vezérlő nem elérhető' : stale ? 'Korábbi mérés · friss adatot várunk' : sensorValid ? 'Élő mérés · ' + Math.floor(state.sensorAgeSec) + ' mp' : 'A szenzor nem ad friss mérést');
   }
-  text('clock', state.clockValid && typeof state.localTime === 'string' ? state.localTime.slice(11, 16) : '--:--');
+  text('clock', available && !stale && state.clockValid && typeof state.localTime === 'string' ? state.localTime.slice(11, 16) : '--:--');
   text('clockLabel', state.clockValid ? 'Budapesti idő' : 'Óra nincs beállítva');
   text('modeBadge', modeNames[state.mode] || 'Ismeretlen mód');
   document.querySelectorAll('.modebtn').forEach(button => button.setAttribute('aria-pressed', String(state.mode === button.dataset.mode)));
   $('pwmNotice').hidden = state.pwmOk;
   $('storageNotice').hidden = state.storageOk;
   $('clockNotice').hidden = state.mode !== 'auto' || state.clockValid;
-  text('actualWarm', finite(state.warm) ? Math.round(state.warm) : '—');
-  text('actualCool', finite(state.cool) ? Math.round(state.cool) : '—');
+  text('actualWarm', available && !stale && finite(state.warm) ? Math.round(state.warm) : '—');
+  text('actualCool', available && !stale && finite(state.cool) ? Math.round(state.cool) : '—');
   if (!manualSending && !manualQueued && !manualEditing && Date.now() > manualGuardUntil) {
     setSlider('warm', state.mode === 'manual' ? state.manualWarm : state.warm);
     setSlider('cool', state.mode === 'manual' ? state.manualCool : state.cool);
@@ -325,13 +494,26 @@ function render(state) {
       renderRows();
     }
   }
-  const network = state.network || {};
+  const network = state.network || {}, mesh = state.mesh || {};
   text('wifiStatus', network.connected ? (network.ssid || 'Csatlakoztatva') : (network.ssid ? 'Csatlakozás: ' + network.ssid : 'Nincs beállítva'));
   text('wifiAddress', network.connected && network.ip ? network.ip + ' · ' + (single ? 'led-control-1ch.local' : 'led-control.local') : 'Csatlakozz a saját hálózathoz');
+  text('wifiHelp', mesh.role === 'slave' ? 'Az otthoni Wi-Fi adatait a terrárium fővezérlőjének küldjük. A led-szallag normál üzemben közvetlen rádiós kapcsolattal működik; saját hotspotja csak beállításhoz vagy kapcsolatvesztéskor indul.' : mesh.role === 'master' ? 'A terrárium az otthoni Wi-Fihez csatlakozik, saját hotspotot nem indít. A beállítási és tartalék hotspotot a led-szallag biztosítja. Ez az űrlap az otthoni hálózat adatait módosítja.' : 'Az otthoni Wi-Fi adatait itt módosíthatod. A saját hálózat jelszava nem változik.');
+  if (mesh.role === 'slave') {
+    text('wifiStatus', mesh.masterNetworkConnected === true ? 'A terrárium csatlakozik az otthoni Wi-Fihez' : 'A terrárium otthoni kapcsolatára vár');
+    text('wifiAddress', 'A terráriumon keresztül érhető el');
+  }
+  $('meshData').hidden = !mesh.role;
+  text('meshRole', mesh.role === 'master' ? 'Fővezérlő · terrárium' : mesh.role === 'slave' ? 'Társvezérlő · led-szallag' : 'Állapot nem közölt');
+  text('meshLink', mesh.peerOnline === true ? 'Kapcsolódva' : mesh.peerOnline === false ? 'A másik vezérlő nem elérhető' : 'Állapot nem közölt');
+  text('meshPeerAge', finite(mesh.peerAgeSec) && mesh.peerAgeSec >= 0 ? Math.floor(mesh.peerAgeSec) + ' mp' : '—');
+  text('meshChannel', finite(mesh.channel) ? String(mesh.channel) : '—');
+  text('meshReady', mesh.ready === true ? 'Működik' : mesh.ready === false ? 'Indulásra vár' : 'Állapot nem közölt');
+  text('meshDropped', finite(mesh.rxDropped) ? String(mesh.rxDropped) : '—');
   text('apName', network.apActive ? (network.apSsid || 'Elérhető') : 'Nem aktív');
   text('apAddress', network.apIp || '192.168.4.1');
-  text('timeInfo', !state.clockValid ? 'Az óra még nincs beállítva. Internetes kapcsolat vagy az alábbi gomb segítségével szinkronizálhatod.' : state.timeSource === 'ntp' ? 'Az idő interneten szinkronizálva. Magyar téli–nyári időszámítás.' : state.timeSource === 'rtc' ? 'Az óra a Wi-Fi-helyreállítás előtti időszinkronból jár. Magyar téli–nyári időszámítás.' : 'Az idő erről az eszközről beállítva. Magyar téli–nyári időszámítás.');
+  text('timeInfo', !state.clockValid ? (bleMode ? 'Az óra még nincs beállítva. Csatlakozz Bluetoothon, vagy az alábbi gombbal állítsd be a telefon idejéről.' : 'Az óra még nincs beállítva. Internetes kapcsolat vagy az alábbi gomb segítségével szinkronizálhatod.') : state.timeSource === 'ntp' ? 'Az idő interneten szinkronizálva. Magyar téli–nyári időszámítás.' : state.timeSource === 'ble' ? 'Az órát Bluetoothon, a telefon idejéről állítottuk be. Magyar téli–nyári időszámítás.' : state.timeSource === 'mesh' ? 'Az óra a másik vezérlőtől kapott időből jár. Magyar téli–nyári időszámítás.' : state.timeSource === 'rtc' ? 'Az óra a Wi-Fi-helyreállítás előtti időszinkronból jár. Magyar téli–nyári időszámítás.' : 'Az idő erről az eszközről beállítva. Magyar téli–nyári időszámítás.');
   renderUpdate(state);
+  renderDiagnostics(state);
   drawGraph();
   updateInspector();
   updateControls();
@@ -803,13 +985,15 @@ $('settingsShortcut').addEventListener('click', () => { $('settings').open = tru
 $('syncClock').addEventListener('click', () => syncClock($('syncClock')));
 $('quickClock').addEventListener('click', () => syncClock($('quickClock')));
 $('checkUpdate').addEventListener('click', checkForUpdate);
+$('startMaintenanceAp').addEventListener('click', startMaintenanceAp);
 $('wifiForm').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!online || latest && latest.mesh && latest.mesh.role === 'slave' && latest.mesh.peerOnline === false) return;
   const ssid = $('wifiSsid').value, password = $('wifiPassword').value, bytes = new TextEncoder();
   if (!ssid || bytes.encode(ssid).length > 32) { notify('A hálózat neve 1–32 bájt hosszú lehet.', true); return; }
   if (password && (bytes.encode(password).length < 8 || bytes.encode(password).length > 63)) { notify('A Wi-Fi-jelszó 8–63 bájt legyen, vagy nyitott hálózatnál maradjon üres.', true); return; }
   $('saveWifi').disabled = true;
-  try { await mutate('/api/wifi', {ssid, password}); $('wifiPassword').value = ''; notify('Hálózat elmentve. A vezérlő megpróbál csatlakozni.'); await refresh(); }
+  try { await mutate('/api/wifi', {ssid, password}); $('wifiPassword').value = ''; notify('Hálózat elmentve. A fővezérlő megpróbál csatlakozni.'); await refresh(); }
   catch (error) { notify(error.message, true); }
   finally { updateControls(); }
 });
@@ -827,7 +1011,7 @@ if (single) {
   document.querySelector('.channel:not(.cool) .channelmeta').textContent = 'Egycsatornás kimenet';
   document.querySelector('.footer').textContent = 'led-szallag · világítás, a te ritmusodban';
 }
-updateControls(); drawGraph(); updateInspector(); poll();
+setupBle(); updateControls(); drawGraph(); updateInspector(); poll();
 
 </script>
 </body>
@@ -847,8 +1031,8 @@ const char HUB_HTML[] PROGMEM = R"AQUAHUB(<!doctype html>
 </style>
 </head>
 <body>
-<header><h1>AquaLight · Mindkét vezérlő</h1><p>A fülekkel választhatsz a két lap vezérlése között; a még nem mentett szerkesztések váltáskor megmaradnak. Mindkét lapot csatlakoztasd ugyanahhoz az otthoni Wi-Fihez. Ha valamelyik panel nem töltődik be, ellenőrizd a lap kapcsolatát, vagy nyisd meg a saját hivatkozását.</p><div role="tablist" aria-label="Vezérlő kiválasztása"><button id="tabTwo" type="button" role="tab" aria-controls="panelTwo" aria-selected="false" tabindex="-1">terrárium</button><button id="tabOne" type="button" role="tab" aria-controls="panelOne" aria-selected="false" tabindex="-1">led-szallag</button></div><noscript><p>A panelek betöltéséhez engedélyezd a JavaScriptet. <a href="/control">Az ezen a lapon futó vezérlés megnyitása</a>.</p></noscript></header>
-<main aria-label="Mindkét AquaLight lap vezérlése">
+<header><h1>AquaLight · Mindkét vezérlő</h1><p>A fülekkel választhatsz a két vezérlő között; a még nem mentett szerkesztések váltáskor megmaradnak. Mindkét panel ezen a címen érhető el. A terrárium kezeli az otthoni Wi-Fi-kapcsolatot, a led-szallag közvetlenül hozzá kapcsolódik.</p><div role="tablist" aria-label="Vezérlő kiválasztása"><button id="tabTwo" type="button" role="tab" aria-controls="panelTwo" aria-selected="false" tabindex="-1">terrárium</button><button id="tabOne" type="button" role="tab" aria-controls="panelOne" aria-selected="false" tabindex="-1">led-szallag</button></div><noscript><p>A panelek betöltéséhez engedélyezd a JavaScriptet. <a href="/control">Az ezen a vezérlőn futó vezérlés megnyitása</a>.</p></noscript></header>
+<main aria-label="Mindkét AquaLight vezérlő kezelése">
 <section class="device" id="panelTwo" role="tabpanel" aria-labelledby="tabTwo" hidden><div class="devicehead"><h2 id="titleTwo">terrárium</h2><p>Teljes spektrumú (lila, kék + piros) és hideg fehér</p><a id="directTwo" target="_blank" rel="noopener">terrárium külön megnyitása</a></div><iframe id="frameTwo" title="terrárium teljes vezérlése"></iframe></section>
 <section class="device" id="panelOne" role="tabpanel" aria-labelledby="tabOne" hidden><div class="devicehead"><h2 id="titleOne">led-szallag</h2><p>Egy fényerőcsatorna · önálló program és szenzor</p><a id="directOne" target="_blank" rel="noopener">led-szallag külön megnyitása</a></div><iframe id="frameOne" title="led-szallag teljes vezérlése"></iframe></section>
 </main>
@@ -856,8 +1040,8 @@ const char HUB_HTML[] PROGMEM = R"AQUAHUB(<!doctype html>
 'use strict';
 const localSingle = document.documentElement.dataset.channels === '1';
 const devices = [
-  {tab: 'tabTwo', panel: 'panelTwo', frame: 'frameTwo', link: 'directTwo', url: localSingle ? 'http://led-control.local/control' : '/control'},
-  {tab: 'tabOne', panel: 'panelOne', frame: 'frameOne', link: 'directOne', url: localSingle ? '/control' : 'http://led-control-1ch.local/control'}
+  {tab: 'tabTwo', panel: 'panelTwo', frame: 'frameTwo', link: 'directTwo', url: localSingle ? '/control?target=peer&channels=2' : '/control'},
+  {tab: 'tabOne', panel: 'panelOne', frame: 'frameOne', link: 'directOne', url: localSingle ? '/control' : '/control?target=peer&channels=1'}
 ];
 function selectDevice(index) {
   devices.forEach((device, current) => {

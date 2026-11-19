@@ -44,7 +44,7 @@ for (const hostChannels of ['1', '2']) {
   assert.equal(local.attrs.src, '/control'); // Relative even when hub opened by IP or AP.
   assert.equal(remote.loads, 0); selected(localSuffix);
   nodes.get('tab' + remoteSuffix).listeners.click(); selected(remoteSuffix);
-  assert.equal(remote.attrs.src, hostChannels === '1' ? 'http://led-control.local/control' : 'http://led-control-1ch.local/control');
+  assert.equal(remote.attrs.src, hostChannels === '1' ? '/control?target=peer&channels=2' : '/control?target=peer&channels=1');
   assert.equal(nodes.get('directTwo').href, hostChannels === '1' ? remote.attrs.src : local.attrs.src);
   assert.equal(nodes.get('directOne').href, hostChannels === '1' ? local.attrs.src : remote.attrs.src);
   local.unsavedDraft = 'retained';
@@ -68,7 +68,7 @@ assert.match(mainSource, /MDNS\.begin\(LED_HOSTNAME\)/);
 assert.match(header, /#ifndef LED_HOSTNAME\s+#define LED_HOSTNAME "led-control"/);
 assert.match(fs.readFileSync(path.join(__dirname, 'platformio.ini'), 'utf8'), /-DLED_HOSTNAME=\\"led-control-1ch\\"/);
 assert.match(fs.readFileSync(path.join(__dirname, 'src/maintenance.cpp'), 'utf8'), /ArduinoOTA\.setHostname\(WiFi\.getHostname\(\)\)/);
-console.log('PASS hub: local initial tab; both hosting variants; separate peer target; ARIA and keyboard tabs; offline peer isolation; drafts survive without reload or API writes; root/control routes and hostname integration');
+console.log('PASS hub: local initial tab; both hosting variants; same-origin peer target; ARIA and keyboard tabs; offline peer isolation; drafts survive without reload or API writes; root/control routes and hostname integration');
 
 const elements = new Map(), all = [], calls = [], timers = new Map();
 let activeElement = null, nextTimer = 1, heldPath = null, release = null, holdNextGet = false, releaseGet = null, updateRequestError = '';
@@ -304,6 +304,94 @@ async function touchAndUndoTest() {
   console.log('PASS editor: scroll-safe touch lock; explicit movement mode; cancelled drag rollback; multitouch guards; grouped drag/input undo; insert/delete/preset/channel undo; undo during save preserves draft');
 }
 
+async function diagnosticsTest() {
+  const draftBeforeDiagnostics = run('JSON.stringify(draft)');
+  // Diagnostics arrive in the existing state response: no new polling or writes.
+  assert.equal(elements.get('diagnosticData').hidden, true);
+  assert.match(elements.get('diagnosticNotice').textContent, /újabb diagnosztikai firmware/);
+  state.diagnostics = {
+    resetReason: 'power_on', freeHeap: 100000, minFreeHeap: 90000, largestFreeBlock: 65536,
+    loop: {lastMs: 1, maxMs: 900, slowCount: 2}, http: {lastMs: 0, maxMs: 780, slowCount: 1},
+    control: {ticks: 320, lastAgeMs: 6, maxGapMs: 21},
+    sensor: {ready: false, lastStatus: 2, lastStatusText: 'ack_error', initAttempts: 5, initFailures: 2,
+      readAttempts: 8, readFailures: 3, consecutiveFailures: 2, lastReadMs: 51, maxReadMs: 100,
+      lastInitMs: 150, maxInitMs: 210, lastErrorStatus: 2, lastErrorText: 'ack_error',
+      lastErrorPhase: 'read', lastErrorAgeSec: 6, sdaHigh: false, sclHigh: true,
+      firstErrorStatus: 4, firstErrorText: 'crc_error', firstErrorPhase: 'read', firstErrorAgeSec: 40,
+      firstErrorSdaHigh: true, firstErrorSclHigh: true, lastErrorSdaHigh: false, lastErrorSclHigh: true,
+      lastInitProbeCode: 2}
+  };
+  const writesBeforeDiagnostics = calls.filter(call => call.options.method === 'POST').length;
+  await run('refresh()');
+  assert.equal(elements.get('diagnosticData').hidden, false);
+  assert.match(elements.get('diagnosticSensor').textContent, /Inicializálásra vár.*ACK.*kód: 2/);
+  assert.match(elements.get('diagnosticLastError').textContent, /ACK.*mérés.*6 mp ezelőtt/);
+  assert.match(elements.get('diagnosticFirstError').textContent, /CRC.*kód: 4.*mérés.*40 mp ezelőtt/);
+  assert.match(elements.get('diagnosticFirstError').textContent, /hiba után SDA: magas \/ SCL: magas/);
+  assert.match(elements.get('diagnosticLastError').textContent, /hiba után SDA: alacsony \/ SCL: magas/);
+  assert.match(elements.get('diagnosticReads').textContent, /8 kísérlet.*3 hiba.*2 egymást követő/);
+  assert.match(elements.get('diagnosticInits').textContent, /5 kísérlet.*2 hiba/);
+  assert.match(elements.get('diagnosticBus').textContent, /SDA: alacsony.*SCL: magas/);
+  assert.match(elements.get('diagnosticProbe').textContent, /NACK.*nyers kód: 2/);
+  assert.match(elements.get('diagnosticReadTiming').textContent, /51 ms.*100 ms/);
+  assert.match(elements.get('diagnosticInitTiming').textContent, /150 ms.*210 ms/);
+  assert.match(elements.get('diagnosticControl').textContent, /320 frissítés.*6 ms ezelőtt.*21 ms/);
+  assert.match(elements.get('diagnosticLoop').textContent, /900 ms.*500 ms felett: 2/);
+  assert.match(elements.get('diagnosticHttp').textContent, /780 ms.*500 ms felett: 1/);
+  assert.match(elements.get('diagnosticHeap').textContent, /100000 B.*90000 B.*65536 B/);
+  assert.equal(elements.get('diagnosticReset').textContent, 'power_on');
+  state.diagnostics.control.ticks = 324; await run('refresh()');
+  assert.match(elements.get('diagnosticControl').textContent, /324 frissítés/);
+  delete state.diagnostics.control; await run('refresh()');
+  assert.equal(elements.get('diagnosticControl').textContent, 'Állapot nem közölt');
+  state.diagnostics.sensor.lastStatus = 253; state.diagnostics.sensor.lastErrorStatus = 253;
+  state.diagnostics.sensor.lastErrorPhase = 'init'; state.diagnostics.sensor.lastInitProbeCode = 0;
+  await run('refresh()');
+  assert.match(elements.get('diagnosticSensor').textContent, /Inicializálási hiba.*kód: 253/);
+  assert.match(elements.get('diagnosticLastError').textContent, /Inicializálási hiba.*inicializálás/);
+  assert.match(elements.get('diagnosticProbe').textContent, /Címválasz \(ACK\).*nyers kód: 0/);
+  state.diagnostics.sensor.lastStatus = 254; state.diagnostics.sensor.lastInitProbeCode = 5;
+  await run('refresh()');
+  assert.match(elements.get('diagnosticSensor').textContent, /Érvénytelen mérési érték.*kód: 254/);
+  assert.match(elements.get('diagnosticProbe').textContent, /Időtúllépés.*nyers kód: 5/);
+  state.diagnostics.sensor.lastInitProbeCode = null; await run('refresh()');
+  assert.equal(elements.get('diagnosticProbe').textContent, 'Még nem történt próba');
+  delete state.diagnostics.sensor.lastInitProbeCode; await run('refresh()');
+  assert.equal(elements.get('diagnosticProbe').textContent, 'Állapot nem közölt');
+  state.diagnostics.sensor.lastStatus = 4; state.diagnostics.sensor.lastErrorStatus = 4;
+  state.diagnostics.sensor.lastErrorPhase = 'init'; await run('refresh()');
+  assert.match(elements.get('diagnosticSensor').textContent, /CRC.*kód: 4/);
+  assert.match(elements.get('diagnosticLastError').textContent, /CRC.*inicializálás/);
+  // A recovered sensor must not erase the firmware's retained failure history.
+  state.diagnostics.sensor.ready = true; state.diagnostics.sensor.lastStatus = 0;
+  state.diagnostics.sensor.consecutiveFailures = 0; await run('refresh()');
+  assert.match(elements.get('diagnosticSensor').textContent, /Inicializálva.*Rendben.*kód: 0/);
+  assert.match(elements.get('diagnosticLastError').textContent, /CRC/);
+  assert.match(elements.get('diagnosticFirstError').textContent, /CRC.*mérés.*40 mp ezelőtt/);
+  state.diagnostics.sensor.lastErrorStatus = null; await run('refresh()');
+  assert.equal(elements.get('diagnosticLastError').textContent, 'Még nem történt hiba');
+  state.diagnostics.sensor.firstErrorStatus = null; await run('refresh()');
+  assert.equal(elements.get('diagnosticFirstError').textContent, 'Még nem történt hiba');
+  delete state.diagnostics.sensor.firstErrorStatus; await run('refresh()');
+  assert.equal(elements.get('diagnosticFirstError').textContent, 'Állapot nem közölt');
+  // Unknown future codes and error text stay plain text, never HTML.
+  state.diagnostics.sensor.lastStatus = 250;
+  state.diagnostics.sensor.lastStatusText = '<img src=x onerror=alert(1)>';
+  state.diagnostics.resetReason = '<b>unknown</b>'; await run('refresh()');
+  assert.match(elements.get('diagnosticSensor').textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.equal(elements.get('diagnosticSensor').innerHTML, undefined);
+  assert.equal(elements.get('diagnosticReset').textContent, '<b>unknown</b>');
+  assert.equal(elements.get('diagnosticReset').innerHTML, undefined);
+  state.diagnostics = {}; await run('refresh()'); // Partial responses degrade without throwing.
+  assert.match(elements.get('diagnosticBus').textContent, /SDA: —.*SCL: —/);
+  delete state.diagnostics; await run('refresh()');
+  assert.equal(elements.get('diagnosticData').hidden, true);
+  assert.match(elements.get('diagnosticNotice').textContent, /újabb diagnosztikai firmware/);
+  assert.equal(calls.filter(call => call.options.method === 'POST').length, writesBeforeDiagnostics);
+  assert.equal(run('JSON.stringify(draft)'), draftBeforeDiagnostics);
+  console.log('PASS diagnostics: optional/partial data; ACK/CRC and retained error history; counters, timing, bus lines, memory and reset; safe text; no control writes or draft changes');
+}
+
 async function singleChannelTest() {
   run(script); await flush(); await flush();
   assert.equal(run('single'), true);
@@ -325,11 +413,288 @@ async function singleChannelTest() {
   await run('sendManual()'); await flush();
   const manual = calls.filter(c => c.route === '/api/manual').pop();
   assert.deepEqual(Object.fromEntries(new URLSearchParams(manual.options.body)), {warm: '37', cool: '0'});
+  await diagnosticsTest();
   console.log('PASS UI single channel: one curve, shared program encoding, manual cool fixed at 0');
 }
 
+
+function meshView(hostChannels, search, role, bleAdapter = null) {
+  const nodes = new Map(), created = [], viewCalls = [], callbacks = new Map();
+  const make = (tag = 'div') => { const node = new Element(tag); created.push(node); return node; };
+  for (const match of header.matchAll(/id="([^"]+)"/g)) { const node = make(); node.id = match[1]; nodes.set(node.id, node); }
+  const modes = [...header.matchAll(/<button\b([^>]*)>/g)].flatMap(match => {
+    const attributes = match[1];
+    if (!/class="[^"]*\bmodebtn\b/.test(attributes)) return [];
+    const id = attributes.match(/id="([^"]*)"/), mode = attributes.match(/data-mode="([^"]*)"/);
+    const node = id ? nodes.get(id[1]) : make('button'); node.dataset.mode = mode[1]; return [node];
+  });
+  const curves = ['warm', 'cool'].map(curve => { const node = make('button'); node.dataset.curve = curve; return node; });
+  const steps = ['warm', 'cool'].flatMap(channel => [-1, 1].map(step => { const node = make('button'); node.dataset = {channel, step: String(step)}; return node; }));
+  const selectors = new Map();
+  const viewDocument = {
+    documentElement: {dataset: {channels: String(hostChannels)}}, hidden: false, addEventListener() {},
+    get activeElement() { return null; },
+    getElementById: id => nodes.get(id) || created.find(node => node.id === id),
+    createElement: make,
+    querySelector: selector => { if (!selectors.has(selector)) selectors.set(selector, make()); return selectors.get(selector); },
+    querySelectorAll: selector => selector === '.modebtn' ? modes : selector === '.curvebtn' ? curves : selector === '.stepbtn' ? steps : selector === '.stepbtn,.slider' ? [...steps, nodes.get('warmSlider'), nodes.get('coolSlider')] : []
+  };
+  const data = {
+    mode: 'auto', warm: 50, cool: 40, manualWarm: 30, manualCool: 20,
+    pwmOk: true, sensorOk: true, temperature: 25.6, humidity: 34.3, sensorAgeSec: 2,
+    clockValid: true, epoch: 1793100000, localTime: '2026-10-27 13:00:00', minuteOfDay: 780, timeSource: 'ntp',
+    schedule: {warm: [{minute:480,level:0},{minute:540,level:50},{minute:1020,level:50},{minute:1080,level:0}], cool: [{minute:450,level:0},{minute:570,level:40},{minute:1110,level:0}]},
+    storageOk: true, savePending: false,
+    network: {connected: role === 'master', ssid: 'Home', ip: '192.168.1.106', apActive: false},
+    mesh: {role, peerOnline: true, peerAgeSec: 1, channel: 4, masterNetworkConnected: true, ready: true, rxDropped: 0},
+    transport: {remote: search.includes('target=peer'), online: true, ageSec: 0},
+    update: {configured: true, state: 'waiting', version: '1.3.0', progress: 0, last_check: 0},
+    maintenance: {version: '1.3.0', localOtaReady: false, telnetReady: false, localOtaBusy: false}
+  };
+  let now = 1793100000000, timerCounter = 0, nextCommand = 40;
+  const model = {data, ackHold: false, ackOutcome: 'applied', ackPolls: 0, releaseAck: null};
+  const pending = new Map();
+  class ViewDate extends Date { static now() { return now; } }
+  const apply = (route, body) => {
+    if (route.endsWith('/mode')) data.mode = body.mode;
+    if (route.endsWith('/manual')) { data.manualWarm = data.warm = Number(body.warm); data.manualCool = data.cool = Number(body.cool); }
+    if (route.endsWith('/program')) for (const channel of ['warm', 'cool']) data.schedule[channel] = body[channel + 'Points'].split(';').map(point => {
+      const [minute, level] = point.split(',').map(Number); return {minute, level};
+    });
+    if (route.endsWith('/maintenance/ap')) data.network.apActive = true;
+  };
+  const response = body => ({ok: true, status: 200, json: async () => body});
+  const sandbox = vm.createContext({
+    console, document: viewDocument, window: {location: {search}, AQUA_BLE_MODE: !!bleAdapter, AquaBleTransport: bleAdapter, addEventListener() {}}, ResizeObserver: class {observe() {}},
+    AbortController, TextEncoder, URLSearchParams, Intl, Date: ViewDate, Number, Math, Set, Promise,
+    setTimeout: (callback, ms) => {
+      const id = ++timerCounter;
+      if (ms === 150) queueMicrotask(() => { now += ms; callback(); });
+      else callbacks.set(id, {callback, ms});
+      return id;
+    },
+    clearTimeout: id => callbacks.delete(id),
+    fetch: async (route, options = {}) => {
+      viewCalls.push({route, options});
+      assert.ok(route.startsWith('/'), 'Every request must stay on the hosting origin');
+      if (options.method === 'POST') {
+        const body = Object.fromEntries(new URLSearchParams(options.body));
+        assert.equal(options.headers['X-Aqua-Request'], '1');
+        const queued = route.startsWith('/api/peer/') || route === '/api/wifi' && role === 'slave' && !search.includes('target=peer');
+        if (!queued) { apply(route, body); return response({ok: true}); }
+        const commandId = ++nextCommand; pending.set(commandId, {route, body});
+        return {ok: true, status: 202, json: async () => ({ok: true, pending: true, commandId})};
+      }
+      if (route.startsWith('/api/peer/command?')) {
+        model.ackPolls++;
+        const commandId = Number(new URLSearchParams(route.split('?')[1]).get('id'));
+        const finish = () => {
+          if (model.ackOutcome === 'error') return response({ok: false, commandId, status: 'error', error: 'A társvezérlő elutasította a parancsot.'});
+          if (model.ackOutcome === 'mismatch') return response({ok: true, commandId: commandId + 1, status: 'applied'});
+          const command = pending.get(commandId); assert.ok(command);
+          apply(command.route, command.body); pending.delete(commandId);
+          return response({ok: true, commandId, status: 'applied', httpStatus: 200});
+        };
+        if (model.ackOutcome === 'timeout' || model.ackPolls === 1) return response({ok: true, commandId, status: 'pending'});
+        if (model.ackHold) return new Promise(resolve => { model.releaseAck = () => resolve(finish()); });
+        return finish();
+      }
+      assert.ok(route === '/api/state' || route === '/api/peer/state');
+      return response(JSON.parse(JSON.stringify(data)));
+    }
+  });
+  const execute = code => vm.runInContext(code, sandbox);
+  execute(script);
+  return {nodes, modes, calls: viewCalls, run: execute, model, document: viewDocument};
+}
+
+
+async function bleModeUiTest() {
+  class Adapter extends EventTarget {
+    constructor() { super(); this.supported = true; this.connected = false; this.calls = []; this.connects = 0; this.channels = 2; }
+    event(state) { const event = new Event('state'); Object.defineProperty(event, 'detail', {value: {state, error: state === 'disconnected' ? 'A Bluetooth-kapcsolat megszakadt.' : ''}}); this.dispatchEvent(event); }
+    async connect() { ++this.connects; this.connected = true; this.event('connected'); return {channels: this.channels, version: '1.4.0-ble'}; }
+    disconnect() { this.connected = false; this.event('disconnected'); }
+    async request(route, body) {
+      if (!this.connected) throw new Error('Nincs Bluetooth-kapcsolat');
+      this.calls.push({route, body});
+      if (route === '/api/state') {
+        const snapshot = JSON.parse(JSON.stringify(this.data));
+        if (this.holdNextState) { this.holdNextState = false; await new Promise(resolve => { this.releaseState = resolve; }); }
+        return snapshot;
+      }
+      if (route === '/api/time') {
+        if (this.holdTime) await new Promise(resolve => { this.releaseTime = resolve; });
+        this.data.timeSource = 'ble'; this.data.clockValid = true;
+      }
+      if (route === '/api/mode') this.data.mode = body.mode;
+      if (route === '/api/program') for (const channel of ['warm', 'cool']) this.data.schedule[channel] = body[channel + 'Points'].split(';').map(point => {
+        const [minute, level] = point.split(',').map(Number); return {minute, level};
+      });
+      return {ok: true};
+    }
+  }
+  const adapter = new Adapter(), view = meshView(2, '?target=peer&channels=1', 'standalone', adapter);
+  adapter.data = view.model.data;
+  await flush(); await flush();
+  assert.equal(view.run('bleMode'), true); assert.equal(view.run('peerTarget'), false); assert.equal(view.run('single'), false);
+  assert.equal(adapter.connects, 0); assert.equal(view.run('online'), false);
+  assert.equal(view.nodes.get('manualEnable').disabled, true); assert.equal(view.nodes.get('saveProgram').disabled, true);
+  assert.equal(view.nodes.get('bleConnectionPanel').hidden, false);
+  for (const id of ['networkSettings', 'firmwareUpdateSection', 'localAccessSection', 'meshSection']) assert.equal(view.nodes.get(id).hidden, true);
+  assert.equal(view.nodes.get('temperature').textContent, '—');
+  await view.run('connectBle()');
+  assert.equal(adapter.connects, 1); assert.equal(view.run('online'), true);
+  assert.equal(view.nodes.get('bleConnect').disabled, true); assert.equal(view.nodes.get('bleDisconnect').disabled, false);
+  assert.match(view.nodes.get('bleStatus').textContent, /órát a telefon idejére állítottuk/);
+  assert.match(view.nodes.get('timeInfo').textContent, /Bluetoothon, a telefon idejéről/);
+  adapter.data.clockValid = false; await view.run('refresh()');
+  assert.match(view.nodes.get('timeInfo').textContent, /Csatlakozz Bluetoothon/);
+  assert.doesNotMatch(view.nodes.get('timeInfo').textContent, /Internetes kapcsolat/);
+  adapter.data.clockValid = true; await view.run('refresh()');
+  assert.deepEqual(adapter.calls.slice(0, 3).map(call => call.route), ['/api/state', '/api/time', '/api/state']);
+  assert.equal(view.calls.length, 0, 'BLE mode must never call HTTP fetch');
+  await view.run("changeMode('manual')"); assert.equal(view.run('latest.mode'), 'manual');
+  view.run("insertPoint('warm',600,12)"); await view.run('saveProgram()');
+  assert.ok(adapter.calls.some(call => call.route === '/api/program' && call.body.warmPoints.includes('600,12')));
+  view.run("draft.warm[0].level='29';markDirty()");
+  const draft = view.run('JSON.stringify(draft)');
+  adapter.holdNextState = true; const stale = view.run('refresh()'); await flush();
+  adapter.disconnect();
+  assert.equal(view.run('online'), false); assert.equal(view.nodes.get('temperature').textContent, '—');
+  assert.equal(view.nodes.get('actualWarm').textContent, '—'); assert.equal(view.nodes.get('warmSlider').disabled, true);
+  adapter.releaseState(); await stale;
+  assert.equal(view.run('online'), false, 'A stale state reply must not reconnect the UI');
+  assert.equal(view.run('JSON.stringify(draft)'), draft);
+  await view.run('connectBle()');
+  assert.equal(view.run('online'), true); assert.equal(view.run('JSON.stringify(draft)'), draft);
+
+  // A write queued on the previous connection is never replayed on reconnect.
+  adapter.holdTime = true;
+  const held = view.run("mutate('/api/time',{epoch:'1793100000'})"); await flush();
+  const queued = view.run("mutate('/api/mode',{mode:'off'})"); const rejected = assert.rejects(queued, /korábbi parancsot nem küldjük újra/);
+  adapter.disconnect(); const reconnect = view.run('connectBle()'); await flush();
+  adapter.holdTime = false; adapter.releaseTime(); await held; await rejected; await reconnect;
+  assert.equal(adapter.calls.filter(call => call.route === '/api/mode' && call.body.mode === 'off').length, 0);
+  assert.equal(view.calls.length, 0);
+
+  const unsupported = new Adapter(); unsupported.supported = false;
+  const unavailable = meshView(2, '', 'standalone', unsupported); unsupported.data = unavailable.model.data;
+  await flush(); await flush(); assert.equal(unavailable.nodes.get('bleConnect').disabled, true);
+  assert.match(unavailable.nodes.get('bleStatus').textContent, /Android Chrome/);
+  const wrong = new Adapter(); wrong.channels = 1;
+  const wrongBoard = meshView(2, '', 'standalone', wrong); wrong.data = wrongBoard.model.data;
+  await flush(); await wrongBoard.run('connectBle()');
+  assert.equal(wrong.connected, false); assert.equal(wrongBoard.run('online'), false);
+  assert.match(wrongBoard.nodes.get('bleStatus').textContent, /kétcsatornás terráriumhoz/);
+  assert.equal(wrong.calls.length, 0);
+  console.log('PASS BLE UI mode: explicit connection, no HTTP/fake data, browser clock, existing program editor, disconnect controls/drafts, stale epochs and no queued mutation replay');
+}
+
+async function meshUiTest() {
+  const peer = meshView(2, '?target=peer&channels=1', 'slave'); await flush(); await flush();
+  assert.equal(peer.run('single'), true); assert.equal(peer.document.documentElement.dataset.channels, '1');
+  assert.equal(peer.nodes.get('deviceName').textContent, 'led-szallag');
+  assert.equal(peer.calls[0].route, '/api/peer/state');
+  assert.equal(peer.nodes.get('checkUpdate').disabled, true);
+  assert.equal(peer.nodes.get('maintenanceApAction').hidden, false);
+  assert.match(peer.nodes.get('updateStatus').textContent, /Helyi frissítés szükséges/);
+  assert.match(peer.nodes.get('meshRole').textContent, /Társvezérlő/);
+  assert.equal(peer.nodes.get('localOtaAddress').textContent, 'led-control-1ch.local:3232');
+  assert.equal(peer.nodes.get('telnetAddress').textContent, 'led-control-1ch.local:23');
+  assert.match(peer.nodes.get('wifiHelp').textContent, /terrárium fővezérlőjének/);
+  peer.model.data.timeSource = 'mesh'; await peer.run('refresh()');
+  assert.match(peer.nodes.get('timeInfo').textContent, /másik vezérlőtől kapott időből jár/);
+  assert.doesNotMatch(peer.nodes.get('timeInfo').textContent, /erről az eszközről/);
+
+  peer.model.ackHold = true;
+  const change = peer.run("changeMode('manual')"); await flush(); await flush();
+  assert.equal(peer.model.data.mode, 'auto'); assert.equal(peer.run('modePending'), 1);
+  assert.equal(peer.nodes.get('warmSlider').disabled, true);
+  assert.equal(peer.calls.find(call => call.options.method === 'POST').route, '/api/peer/mode');
+  assert.ok(peer.model.releaseAck); peer.model.releaseAck(); await change;
+  assert.equal(peer.model.data.mode, 'manual'); assert.equal(peer.run('latest.mode'), 'manual');
+  assert.equal(peer.nodes.get('warmSlider').disabled, false); assert.ok(peer.model.ackPolls >= 2);
+
+  // Acknowledgement completion, rather than HTTP 202, controls successful save.
+  peer.run("insertPoint('warm',600,12)"); peer.model.releaseAck = null;
+  const save = peer.run('saveProgram()'); await flush(); await flush();
+  assert.equal(peer.run('dirty'), true); assert.equal(peer.run('saving'), true);
+  assert.doesNotMatch(peer.nodes.get('toast').textContent, /elmentve/);
+  peer.run("draft.warm[0].level='29';markDirty()");
+  peer.model.releaseAck(); await save;
+  assert.equal(peer.run('dirty'), true); assert.equal(peer.run('draft.warm[0].level'), '29');
+  const draftBefore = peer.run('JSON.stringify(draft)');
+  peer.model.data.transport.ageSec = 10; peer.model.data.sensorAgeSec = 12; await peer.run('refresh()');
+  assert.equal(peer.nodes.get('temperature').textContent, '25,6'); // Cache age was already included by the server.
+  peer.model.data.transport.ageSec = 16; await peer.run('refresh()');
+  assert.equal(peer.nodes.get('temperature').textContent, '—'); assert.equal(peer.nodes.get('actualWarm').textContent, '—');
+  assert.equal(peer.nodes.get('staleNotice').hidden, false);
+  peer.model.data.transport.online = false; peer.model.data.transport.ageSec = 31; await peer.run('refresh()');
+  assert.equal(peer.nodes.get('offlineNotice').hidden, false); assert.equal(peer.nodes.get('saveProgram').disabled, true);
+  assert.equal(peer.nodes.get('warmSlider').disabled, true);
+  const writes = peer.calls.filter(call => call.options.method === 'POST').length;
+  await assert.rejects(peer.run("request('/api/mode',{mode:'off'})"), /nem elérhető/);
+  assert.equal(peer.calls.filter(call => call.options.method === 'POST').length, writes);
+  assert.equal(peer.run('JSON.stringify(draft)'), draftBefore);
+
+  for (const outcome of ['error', 'timeout', 'mismatch']) {
+    const failed = meshView(2, '?target=peer&channels=1', 'slave'); await flush(); await flush();
+    failed.run("insertPoint('warm',600,12)"); failed.model.ackOutcome = outcome;
+    await failed.run('saveProgram()');
+    assert.equal(failed.run('dirty'), true); assert.equal(failed.run('saving'), false);
+    assert.doesNotMatch(failed.nodes.get('toast').textContent, /elmentve/);
+    assert.match(failed.nodes.get('toast').className, /error/);
+    assert.match(failed.nodes.get('toast').textContent, outcome === 'timeout' ? /nem igazolta vissza időben/ : outcome === 'mismatch' ? /másik parancs/ : /elutasította/);
+  }
+
+  const master = meshView(1, '?target=peer&channels=2', 'master'); await flush(); await flush();
+  assert.equal(master.nodes.get('localOtaAddress').textContent, 'led-control.local:3232');
+  master.model.data.timeSource = 'mesh'; await master.run('refresh()');
+  assert.match(master.nodes.get('timeInfo').textContent, /másik vezérlőtől kapott időből jár/);
+  assert.doesNotMatch(master.nodes.get('timeInfo').textContent, /fővezérlője szinkronizálja|erről az eszközről/);
+  assert.match(master.nodes.get('wifiHelp').textContent, /saját hotspotot nem indít.*hotspotot a led-szallag biztosítja/);
+  assert.equal(master.run('single'), false); assert.equal(master.document.documentElement.dataset.channels, '2');
+  assert.equal(master.nodes.get('checkUpdate').disabled, false); assert.equal(master.nodes.get('maintenanceApAction').hidden, true);
+  await master.run("changeMode('manual')"); assert.equal(master.calls.find(call => call.options.method === 'POST').route, '/api/peer/mode');
+  // Local operation does not depend on the other panel's online state.
+  const local = meshView(2, '?channels=1', 'master'); await flush(); await flush();
+  assert.equal(local.run('single'), false); assert.equal(local.calls[0].route, '/api/state');
+  local.model.data.mesh.peerOnline = false; await local.run('refresh()');
+  await local.run("changeMode('manual')"); assert.equal(local.model.data.mode, 'manual');
+  assert.equal(local.nodes.get('maintenanceApAction').hidden, true);
+  delete local.model.data.mesh; delete local.model.data.transport; await local.run('refresh()');
+  assert.equal(local.nodes.get('meshData').hidden, true); assert.equal(local.run('online'), true); // Older state schema remains valid.
+
+  const hotspot = meshView(2, '?target=peer&channels=1', 'slave'); await flush(); await flush();
+  hotspot.model.ackHold = true;
+  const activate = hotspot.run('startMaintenanceAp()'); await flush(); await flush();
+  assert.equal(hotspot.model.data.network.apActive, false);
+  assert.doesNotMatch(hotspot.nodes.get('toast').textContent, /visszaigazolta/);
+  hotspot.model.releaseAck(); await activate;
+  assert.equal(hotspot.model.data.network.apActive, true);
+  assert.equal(hotspot.calls.find(call => call.options.method === 'POST').route, '/api/peer/maintenance/ap');
+  assert.match(hotspot.nodes.get('toast').textContent, /visszaigazolta/);
+
+  for (const search of ['', '?target=peer&channels=1']) {
+    const wifi = meshView(search ? 2 : 1, search, 'slave'); await flush(); await flush();
+    wifi.nodes.get('wifiSsid').value = 'Home'; wifi.nodes.get('wifiPassword').value = 'test-password';
+    await wifi.nodes.get('wifiForm').listeners.submit({preventDefault() {}});
+    assert.equal(wifi.calls.find(call => call.options.method === 'POST').route, '/api/wifi');
+    if (!search) assert.ok(wifi.calls.some(call => call.route.startsWith('/api/peer/command?id=')));
+    assert.match(wifi.nodes.get('toast').textContent, /fővezérlő/);
+  }
+  const invalid = meshView(2, '?target=peer&channels=03', 'slave'); await flush(); await flush();
+  assert.equal(invalid.calls.length, 0); assert.equal(invalid.run('online'), false);
+  const wrongChannels = meshView(2, '?target=peer&channels=1', 'master'); await flush(); await flush();
+  wrongChannels.model.data.channels = 2; await wrongChannels.run('refresh()');
+  assert.equal(wrongChannels.run('online'), false);
+  await assert.rejects(wrongChannels.run("request('/api/mode',{mode:'off'})"), /nem elérhető/);
+  console.log('PASS mesh UI: same-origin peer routing, validated channels, applied ACK before success, command errors/timeouts, retained drafts, stale/offline data, master Wi-Fi and slave hotspot');
+}
+
 (async () => {
-  if (singleChannel) return singleChannelTest();
+  if (singleChannel) { await singleChannelTest(); await meshUiTest(); await bleModeUiTest(); return; }
   run(script); await flush(); await flush();
   await touchAndUndoTest();
   assert.equal(elements.get('temperature').textContent, '25,6');
@@ -551,5 +916,8 @@ async function singleChannelTest() {
   assert.equal(run('JSON.stringify(draft)'), draftBeforeUpdate);
   assert.equal(state.mode, modeBeforeUpdate);
   assert.deepEqual([state.manualWarm, state.manualCool], manualBeforeUpdate);
+  await diagnosticsTest();
+  await meshUiTest();
+  await bleModeUiTest();
   console.log('PASS UI: independent curves; drag/capture/coordinates; bounds/collision; mouse/touch dedup; point limits; keyboard focus; unsaved drafts; atomic API; explicit manual ON/OFF; guarded slider writes; stale polls and save/edit races; sensor/clock/storage status; OTA optional/pending/error/progress/reconnect state');
 })().catch(error => { console.error(error); process.exitCode = 1; });

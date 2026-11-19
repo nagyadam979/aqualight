@@ -22,7 +22,7 @@
 #error "LED OTA requires rollback-enabled bootloader and the trusted CA bundle"
 #endif
 #ifndef LED_CONTROL_VERSION
-#define LED_CONTROL_VERSION "1.2.5"
+#define LED_CONTROL_VERSION "1.3.2"
 #endif
 
 namespace ledota {
@@ -31,7 +31,11 @@ constexpr uint32_t FIRST_CHECK_MS = 60000;
 constexpr uint32_t CHECK_INTERVAL_MS = 30 * 60000;
 constexpr uint32_t MIN_VALIDATION_MS = 10000;
 constexpr uint32_t HEALTH_STABLE_MS = 3000;
+#if defined(LED_BLE_ONLY) && LED_BLE_ONLY
+constexpr uint32_t VALIDATION_DEADLINE_MS = 180000;  // Pilot must prove authenticated phone/time I/O first.
+#else
 constexpr uint32_t VALIDATION_DEADLINE_MS = 60000;
+#endif
 constexpr int HTTP_TIMEOUT_MS = 7000;
 SemaphoreHandle_t flashMutex = nullptr;
 TaskHandle_t workerTask = nullptr;
@@ -46,7 +50,7 @@ struct State {
 } state;
 std::atomic<bool> queued{false}, running{false}, ready{false}, bootSelected{false};
 std::atomic<uint32_t> nextCheck{FIRST_CHECK_MS};
-bool configured = false, pendingValidation = false, rollbackFailed = false;
+bool configured = false, pendingValidation = false, rollbackFailed = false, initialized = false;
 uint32_t startedMs = 0, healthySince = 0;
 unsigned failures = 0;
 
@@ -301,8 +305,9 @@ void worker(void *) {
 }
 }  // namespace
 
-void begin() {
-  if (configured) return;
+void begin(bool enableCloud) {
+  if (initialized) return;
+  initialized = true;
   startedMs = millis();
   nextCheck.store(startedMs + FIRST_CHECK_MS);
   const esp_partition_t *partition = esp_ota_get_running_partition();
@@ -311,8 +316,9 @@ void begin() {
       imageState == ESP_OTA_IMG_PENDING_VERIFY;
   if (pendingValidation) setState("pending_validation");
   flashMutex = xSemaphoreCreateMutex();
-  configured = flashMutex && xTaskCreate(worker, "led-cloud-ota", 12288, nullptr, 1, &workerTask) == pdPASS;
-  if (!configured) setState("error", "Update worker could not be started");
+  configured = enableCloud && flashMutex && xTaskCreate(worker, "led-cloud-ota", 12288, nullptr, 1, &workerTask) == pdPASS;
+  if (!flashMutex || (enableCloud && !configured)) setState("error", "Update worker could not be started");
+  else if (!enableCloud && !pendingValidation) setState("local_only");
 }
 
 // Preserve the previous slot until the newly booted image has passed its health gate.
